@@ -32,6 +32,7 @@ static uint16_t ip_forward_error_process(
 	struct rte_ipv4_hdr *ip;
 	struct rte_mbuf *mbuf;
 	struct nexthop *nh;
+	struct nexthop *gw;
 	uint8_t icmp_type;
 	uint16_t vrf_id;
 
@@ -50,7 +51,8 @@ static uint16_t ip_forward_error_process(
 		// Get the local router IP address from the input iface
 		input_iface = ip_output_mbuf_data(mbuf)->input_iface;
 		vrf_id = input_iface->vrf_id;
-		if ((nh = ip4_addr_get_preferred(input_iface->id, ip->src_addr)) == NULL) {
+		gw = ip4_route_lookup(vrf_id, ip->src_addr);
+		if (gw == NULL || (nh = ip4_addr_get_preferred(input_iface->id, gw->ip)) == NULL) {
 			rte_node_enqueue_x1(graph, node, NO_IP, mbuf);
 			continue;
 		}

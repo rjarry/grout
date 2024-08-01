@@ -4,6 +4,7 @@
 #ifndef _GR_IP4_DATAPATH_H
 #define _GR_IP4_DATAPATH_H
 
+#include <gr_control_output.h>
 #include <gr_iface.h>
 #include <gr_ip4_control.h>
 #include <gr_mbuf.h>
@@ -31,6 +32,7 @@ GR_MBUF_PRIV_DATA_TYPE(ip_local_mbuf_data, {
 	uint16_t len;
 	uint16_t vrf_id;
 	uint8_t proto;
+	uint8_t ttl;
 });
 
 void ip_input_local_add_proto(uint8_t proto, const char *next_node);
@@ -46,7 +48,7 @@ static inline void ip_set_fields(struct rte_ipv4_hdr *ip, struct ip_local_mbuf_d
 	ip->total_length = rte_cpu_to_be_16(data->len + rte_ipv4_hdr_len(ip));
 	ip->fragment_offset = 0;
 	ip->packet_id = 0;
-	ip->time_to_live = IPV4_DEFAULT_TTL; // make this confgurable somehow?
+	ip->time_to_live = (data->ttl ? data->ttl : IPV4_DEFAULT_TTL);
 	ip->next_proto_id = data->proto;
 	ip->src_addr = data->src;
 	ip->dst_addr = data->dst;
@@ -57,4 +59,12 @@ static inline void ip_set_fields(struct rte_ipv4_hdr *ip, struct ip_local_mbuf_d
 #define GR_IP_ICMP_DEST_UNREACHABLE 3
 #define GR_IP_ICMP_TTL_EXCEEDED 11
 
+int ip4_icmp_output_request(
+	uint16_t vrf_id,
+	ip4_addr_t dst,
+	struct nexthop *gw,
+	uint16_t seq_num,
+	uint8_t ttl
+);
+void icmp_register_callback(uint8_t icmp_type, control_output_cb_t cb);
 #endif

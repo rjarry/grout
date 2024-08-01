@@ -16,12 +16,15 @@
 
 enum {
 	OUTPUT = 0,
+	LOCAL,
 	INVALID,
 	UNSUPPORTED,
 	EDGE_COUNT,
 };
 
 #define ICMP_MIN_SIZE 8
+
+static control_output_cb_t icmp_cb[1 << 8] = {NULL};
 
 static uint16_t
 icmp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
@@ -40,8 +43,8 @@ icmp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 			next = INVALID;
 			goto next;
 		}
-		switch (icmp->icmp_type) {
-		case RTE_IP_ICMP_ECHO_REQUEST:
+
+		if (icmp->icmp_type == RTE_IP_ICMP_ECHO_REQUEST) {
 			if (icmp->icmp_code != 0) {
 				next = INVALID;
 				goto next;
@@ -50,17 +53,27 @@ icmp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 			ip = ip_data->dst;
 			ip_data->dst = ip_data->src;
 			ip_data->src = ip;
-			break;
-		default:
+			next = OUTPUT;
+		} else if (icmp_cb[icmp->icmp_type]) {
+			control_output_mbuf_data(mbuf)->callback = icmp_cb[icmp->icmp_type];
+			control_output_mbuf_data(mbuf)->timestamp = clock();
+
+			next = LOCAL;
+		} else {
 			next = UNSUPPORTED;
-			goto next;
 		}
-		next = OUTPUT;
 next:
 		rte_node_enqueue_x1(graph, node, next, mbuf);
 	}
 
 	return nb_objs;
+}
+
+void icmp_register_callback(uint8_t icmp_type, control_output_cb_t cb) {
+	if (icmp_cb[icmp_type]) {
+		ABORT("callback already registered for %d", icmp_type);
+	}
+	icmp_cb[icmp_type] = cb;
 }
 
 static void icmp_input_register(void) {
@@ -75,6 +88,7 @@ static struct rte_node_register icmp_input_node = {
 	.nb_edges = EDGE_COUNT,
 	.next_nodes = {
 		[OUTPUT] = "icmp_output",
+		[LOCAL] = "control_output",
 		[INVALID] = "icmp_input_invalid",
 		[UNSUPPORTED] = "icmp_input_unsupported",
 	},

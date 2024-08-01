@@ -72,4 +72,6 @@ struct nexthop *ip4_addr_get_preferred(uint16_t iface_id, ip4_addr_t dst);
 // get all addresses for a given interface
 struct hoplist *ip4_addr_get_all(uint16_t iface_id);
 
+// get last mbuf, caller is responsible for freeing it
+struct rte_mbuf *ip4_icmp_get_last_reply();
 #endif

@@ -176,4 +176,25 @@ struct gr_ip4_addr_list_resp {
 	struct gr_ip4_ifaddr addrs[/* n_addrs */];
 };
 
+#define GR_IP4_ICMP_REQUEST REQUEST_TYPE(GR_IP4_MODULE, 0x0024)
+
+struct gr_ip4_icmp_request {
+	struct ip4_net addr;
+	uint16_t vrf;
+	uint16_t sequence_number;
+	uint16_t ttl;
+};
+
+#define GR_IP4_ICMP_GET_REPLY REQUEST_TYPE(GR_IP4_MODULE, 0x0025)
+
+struct gr_ip4_icmp_response {
+	bool answered;
+	uint16_t type;
+	uint16_t code;
+	uint16_t sequence_number;
+	uint16_t ttl;
+	clock_t response_time;
+	uint8_t data[64];
+};
+
 #endif
