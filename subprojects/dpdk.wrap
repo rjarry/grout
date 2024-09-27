@@ -7,6 +7,8 @@ diff_files =
 	dpdk/graph-expose-node-context-as-pointers.patch,
 	dpdk/graph-make-graphviz-export-more-readable.patch,
 	dpdk/ipv6-use-structures.patch,
+	dpdk/0001-telemetry-add-api-to-register-a-command-protected-by.patch,
+	dpdk/0002-ethdev-protect-telemetry-endpoints-with-a-lock.patch,
 	dpdk/buildtools-cmdline-fix-meson-error-when-used-as-a-su.patch
 
 [provide]

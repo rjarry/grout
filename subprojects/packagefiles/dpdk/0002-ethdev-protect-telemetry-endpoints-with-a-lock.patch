@@ -1,0 +1,169 @@
+From 74887f9729f1725c16576dca16d2db55c641a4f1 Mon Sep 17 00:00:00 2001
+From: Robin Jarry <rjarry@redhat.com>
+Date: Wed, 25 Sep 2024 16:26:52 -0400
+Subject: [PATCH dpdk 2/2] ethdev: protect telemetry endpoints with a lock
+
+Signed-off-by: Robin Jarry <rjarry@redhat.com>
+---
+ lib/ethdev/ethdev_driver.c        |  8 ++-
+ lib/ethdev/ethdev_private.h       |  3 +
+ lib/ethdev/rte_ethdev_telemetry.c | 93 +++++++++++++++++++------------
+ 3 files changed, 65 insertions(+), 39 deletions(-)
+
+diff --git a/lib/ethdev/ethdev_driver.c b/lib/ethdev/ethdev_driver.c
+index c335a25a8262..747abbdee33a 100644
+--- a/lib/ethdev/ethdev_driver.c
++++ b/lib/ethdev/ethdev_driver.c
+@@ -372,11 +372,13 @@ rte_eth_dev_destroy(struct rte_eth_dev *ethdev,
+ 	if (*ethdev_uninit == NULL)
+ 		return -EINVAL;
+ 
++	rte_spinlock_lock(&telemetry_lock);
+ 	ret = ethdev_uninit(ethdev);
+-	if (ret)
+-		return ret;
++	if (ret == 0)
++		ret = rte_eth_dev_release_port(ethdev);
++	rte_spinlock_unlock(&telemetry_lock);
+ 
+-	return rte_eth_dev_release_port(ethdev);
++	return ret;
+ }
+ 
+ struct rte_eth_dev *
+diff --git a/lib/ethdev/ethdev_private.h b/lib/ethdev/ethdev_private.h
+index 0d36b9c30f70..618da1650505 100644
+--- a/lib/ethdev/ethdev_private.h
++++ b/lib/ethdev/ethdev_private.h
+@@ -41,6 +41,9 @@ struct rte_eth_dev_callback {
+ 
+ extern rte_spinlock_t eth_dev_cb_lock;
+ 
++/** Used to avoid concurrent telemetry access during port destruction */
++extern rte_spinlock_t telemetry_lock;
++
+ /* Convert all error to -EIO if device is removed. */
+ int eth_err(uint16_t port_id, int ret);
+ 
+diff --git a/lib/ethdev/rte_ethdev_telemetry.c b/lib/ethdev/rte_ethdev_telemetry.c
+index 6b873e7abe68..87faaf69d879 100644
+--- a/lib/ethdev/rte_ethdev_telemetry.c
++++ b/lib/ethdev/rte_ethdev_telemetry.c
+@@ -10,6 +10,7 @@
+ 
+ #include "rte_ethdev.h"
+ #include "ethdev_driver.h"
++#include "ethdev_private.h"
+ #include "sff_telemetry.h"
+ #include "rte_tm.h"
+ 
+@@ -24,6 +25,8 @@ static const struct {
+ 	{ RTE_ETH_FEC_MODE_CAPA_MASK(LLRS),	"llrs"	},
+ };
+ 
++rte_spinlock_t telemetry_lock = RTE_SPINLOCK_INITIALIZER;
++
+ static int
+ eth_dev_parse_port_params(const char *params, uint16_t *port_id,
+ 		char **end_param, bool has_next)
+@@ -1397,43 +1400,61 @@ eth_dev_handle_port_tm_node_caps(const char *cmd __rte_unused,
+ 
+ RTE_INIT(ethdev_init_telemetry)
+ {
+-	rte_telemetry_register_cmd("/ethdev/list", eth_dev_handle_port_list,
+-			"Returns list of available ethdev ports. Takes no parameters");
+-	rte_telemetry_register_cmd("/ethdev/stats", eth_dev_handle_port_stats,
+-			"Returns the common stats for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/xstats", eth_dev_handle_port_xstats,
+-			"Returns the extended stats for a port. Parameters: int port_id,hide_zero=true|false(Optional for indicates hide zero xstats)");
++	rte_telemetry_register_cmd_lock("/ethdev/list", eth_dev_handle_port_list,
++			"Returns list of available ethdev ports. Takes no parameters",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/stats", eth_dev_handle_port_stats,
++			"Returns the common stats for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/xstats", eth_dev_handle_port_xstats,
++			"Returns the extended stats for a port. Parameters: int port_id,hide_zero=true|false(Optional for indicates hide zero xstats)",
++			&telemetry_lock);
+ #ifndef RTE_EXEC_ENV_WINDOWS
+-	rte_telemetry_register_cmd("/ethdev/dump_priv", eth_dev_handle_port_dump_priv,
+-			"Returns dump private information for a port. Parameters: int port_id");
++	rte_telemetry_register_cmd_lock("/ethdev/dump_priv", eth_dev_handle_port_dump_priv,
++			"Returns dump private information for a port. Parameters: int port_id",
++			&telemetry_lock);
+ #endif
+-	rte_telemetry_register_cmd("/ethdev/link_status",
++	rte_telemetry_register_cmd_lock("/ethdev/link_status",
+ 			eth_dev_handle_port_link_status,
+-			"Returns the link status for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/info", eth_dev_handle_port_info,
+-			"Returns the device info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/module_eeprom", eth_dev_handle_port_module_eeprom,
+-			"Returns module EEPROM info with SFF specs. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/macs", eth_dev_handle_port_macs,
+-			"Returns the MAC addresses for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/flow_ctrl", eth_dev_handle_port_flow_ctrl,
+-			"Returns flow ctrl info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/rx_queue", eth_dev_handle_port_rxq,
+-			"Returns Rx queue info for a port. Parameters: int port_id, int queue_id (Optional if only one queue)");
+-	rte_telemetry_register_cmd("/ethdev/tx_queue", eth_dev_handle_port_txq,
+-			"Returns Tx queue info for a port. Parameters: int port_id, int queue_id (Optional if only one queue)");
+-	rte_telemetry_register_cmd("/ethdev/dcb", eth_dev_handle_port_dcb,
+-			"Returns DCB info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/rss_info", eth_dev_handle_port_rss_info,
+-			"Returns RSS info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/fec", eth_dev_handle_port_fec,
+-			"Returns FEC info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/vlan", eth_dev_handle_port_vlan,
+-			"Returns VLAN info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/tm_capability", eth_dev_handle_port_tm_caps,
+-			"Returns TM Capabilities info for a port. Parameters: int port_id");
+-	rte_telemetry_register_cmd("/ethdev/tm_level_capability", eth_dev_handle_port_tm_level_caps,
+-			"Returns TM Level Capabilities info for a port. Parameters: int port_id, int level_id (see tm_capability for the max)");
+-	rte_telemetry_register_cmd("/ethdev/tm_node_capability", eth_dev_handle_port_tm_node_caps,
+-			"Returns TM Node Capabilities info for a port. Parameters: int port_id, int node_id (see tm_capability for the max)");
++			"Returns the link status for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/info", eth_dev_handle_port_info,
++			"Returns the device info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/module_eeprom", eth_dev_handle_port_module_eeprom,
++			"Returns module EEPROM info with SFF specs. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/macs", eth_dev_handle_port_macs,
++			"Returns the MAC addresses for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/flow_ctrl", eth_dev_handle_port_flow_ctrl,
++			"Returns flow ctrl info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/rx_queue", eth_dev_handle_port_rxq,
++			"Returns Rx queue info for a port. Parameters: int port_id, int queue_id (Optional if only one queue)",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/tx_queue", eth_dev_handle_port_txq,
++			"Returns Tx queue info for a port. Parameters: int port_id, int queue_id (Optional if only one queue)",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/dcb", eth_dev_handle_port_dcb,
++			"Returns DCB info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/rss_info", eth_dev_handle_port_rss_info,
++			"Returns RSS info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/fec", eth_dev_handle_port_fec,
++			"Returns FEC info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/vlan", eth_dev_handle_port_vlan,
++			"Returns VLAN info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/tm_capability", eth_dev_handle_port_tm_caps,
++			"Returns TM Capabilities info for a port. Parameters: int port_id",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/tm_level_capability", eth_dev_handle_port_tm_level_caps,
++			"Returns TM Level Capabilities info for a port. Parameters: int port_id, int level_id (see tm_capability for the max)",
++			&telemetry_lock);
++	rte_telemetry_register_cmd_lock("/ethdev/tm_node_capability", eth_dev_handle_port_tm_node_caps,
++			"Returns TM Node Capabilities info for a port. Parameters: int port_id, int node_id (see tm_capability for the max)",
++			&telemetry_lock);
+ }
+-- 
+2.46.2
+
