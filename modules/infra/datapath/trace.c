@@ -53,6 +53,55 @@ int eth_type_format(char *buf, size_t len, rte_be16_t type) {
 	return snprintf(buf, len, "0x%04x", rte_be_to_cpu_16(type));
 }
 
+static inline const char *ip_proto_str(uint8_t proto) {
+	switch (proto) {
+	case IPPROTO_HOPOPTS:
+		return "HOPOPT";
+	case IPPROTO_ICMP:
+		return "ICMP";
+	case IPPROTO_IGMP:
+		return "IGMP";
+	case IPPROTO_IPIP:
+		return "IPIP";
+	case IPPROTO_TCP:
+		return "TCP";
+	case IPPROTO_UDP:
+		return "UDP";
+	case IPPROTO_IPV6:
+		return "IPv6";
+	case IPPROTO_ROUTING:
+		return "RouteOpts";
+	case IPPROTO_FRAGMENT:
+		return "FragOpts";
+	case IPPROTO_GRE:
+		return "GRE";
+	case IPPROTO_ESP:
+		return "ESP";
+	case IPPROTO_AH:
+		return "AH";
+	case IPPROTO_MTP:
+		return "MTP";
+	case IPPROTO_ICMPV6:
+		return "ICMPv6";
+	case IPPROTO_NONE:
+		return "NoNext";
+	case IPPROTO_DSTOPTS:
+		return "DstOpts";
+	case IPPROTO_SCTP:
+		return "SCTP";
+	case IPPROTO_RAW:
+		return "Raw";
+	}
+	return NULL;
+}
+
+static int ip_proto_format(char *buf, size_t len, uint8_t proto) {
+	const char *str = ip_proto_str(proto);
+	if (str)
+		return snprintf(buf, len, "%s(%d)", str, proto);
+	return snprintf(buf, len, "%d", proto);
+}
+
 static ssize_t trace_icmp6(
 	char *buf,
 	const size_t len,
@@ -81,6 +130,19 @@ int trace_arp_format(char *buf, size_t len, const struct rte_arp_hdr *arp, uint1
 		);
 	}
 	return snprintf(buf, len, "opcode=%u", rte_be_to_cpu_16(arp->arp_opcode));
+}
+
+int trace_ip_format(char *buf, size_t len, const struct rte_ipv4_hdr *ip, uint16_t /*data_len*/) {
+	int n = snprintf(
+		buf,
+		len,
+		IP4_ADDR_FMT " > " IP4_ADDR_FMT " ttl=%hhu proto=",
+		IP4_ADDR_SPLIT(&ip->src_addr),
+		IP4_ADDR_SPLIT(&ip->dst_addr),
+		ip->time_to_live
+	);
+	n += ip_proto_format(buf + n, len - n, ip->next_proto_id);
+	return n;
 }
 
 void trace_log_packet(const struct rte_mbuf *m, const char *node, const char *iface) {
@@ -123,16 +185,8 @@ ipv4:
 
 		ip = rte_pktmbuf_mtod_offset(m, const struct rte_ipv4_hdr *, offset);
 		offset += sizeof(*ip);
-		inet_ntop(AF_INET, &ip->src_addr, src, sizeof(src));
-		inet_ntop(AF_INET, &ip->dst_addr, dst, sizeof(dst));
-		n += snprintf(
-			buf + n,
-			sizeof(buf) - n,
-			" / IP %s > %s ttl=%hhu",
-			src,
-			dst,
-			ip->time_to_live
-		);
+		n += snprintf(buf + n, sizeof(buf) - n, " / IP ");
+		n += trace_ip_format(buf + n, sizeof(buf) - n, ip, sizeof(*ip));
 
 		switch (ip->next_proto_id) {
 		case IPPROTO_ICMP: {
@@ -165,9 +219,6 @@ ipv4:
 		}
 		case IPPROTO_IPIP:
 			goto ipv4;
-		default:
-			n += snprintf(buf + n, sizeof(buf) - n, " proto=%hhu", ip->next_proto_id);
-			break;
 		}
 
 		break;

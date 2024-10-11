@@ -7,6 +7,7 @@
 
 #include <rte_arp.h>
 #include <rte_graph.h>
+#include <rte_ip4.h>
 #include <rte_mbuf.h>
 
 #include <sys/queue.h>
@@ -31,5 +32,7 @@ bool gr_trace_all_enabled(void);
 int eth_type_format(char *buf, size_t len, rte_be16_t type);
 
 int trace_arp_format(char *buf, size_t len, const struct rte_arp_hdr *, uint16_t data_len);
+
+int trace_ip_format(char *buf, size_t len, const struct rte_ipv4_hdr *, uint16_t data_len);
 
 #endif
