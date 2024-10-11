@@ -159,6 +159,57 @@ int trace_ip6_format(char *buf, size_t len, const struct rte_ipv6_hdr *ip6, uint
 	return n;
 }
 
+int trace_icmp_format(
+	char *buf,
+	size_t len,
+	const struct rte_icmp_hdr *icmp,
+	uint16_t /*hdr_len*/
+) {
+	switch (icmp->icmp_type) {
+	case RTE_ICMP_TYPE_ECHO_REQUEST:
+		return snprintf(
+			buf,
+			len,
+			"echo request id=%u seq=%u",
+			rte_be_to_cpu_16(icmp->icmp_ident),
+			rte_be_to_cpu_16(icmp->icmp_seq_nb)
+		);
+	case RTE_ICMP_TYPE_ECHO_REPLY:
+		return snprintf(
+			buf,
+			len,
+			"echo reply id=%u seq=%u",
+			rte_be_to_cpu_16(icmp->icmp_ident),
+			rte_be_to_cpu_16(icmp->icmp_seq_nb)
+		);
+	case RTE_ICMP_TYPE_DEST_UNREACHABLE:
+		switch (icmp->icmp_code) {
+		case RTE_ICMP_CODE_UNREACH_NET:
+			return snprintf(buf, len, "network unreachable");
+		case RTE_ICMP_CODE_UNREACH_HOST:
+			return snprintf(buf, len, "host unreachable");
+		case RTE_ICMP_CODE_UNREACH_PROTO:
+			return snprintf(buf, len, "protocol unreachable");
+		case RTE_ICMP_CODE_UNREACH_PORT:
+			return snprintf(buf, len, "port unreachable");
+		case RTE_ICMP_CODE_UNREACH_FRAG:
+			return snprintf(buf, len, "fragmentation needed and DF set");
+		case RTE_ICMP_CODE_UNREACH_SRC:
+			return snprintf(buf, len, "source route failed");
+		}
+		return snprintf(buf, len, "destination unreachable code=%hhu", icmp->icmp_code);
+	case RTE_ICMP_TYPE_TTL_EXCEEDED:
+		switch (icmp->icmp_code) {
+		case RTE_ICMP_CODE_TTL_EXCEEDED:
+			return snprintf(buf, len, "ttl exceeded in transit");
+		case RTE_ICMP_CODE_TTL_FRAG:
+			return snprintf(buf, len, "fragment reassembly time exceeded");
+		}
+		return snprintf(buf, len, "time exceeded code=%hhu", icmp->icmp_code);
+	}
+	return snprintf(buf, len, "type=%hhu code=%hhu", icmp->icmp_type, icmp->icmp_code);
+}
+
 void trace_log_packet(const struct rte_mbuf *m, const char *node, const char *iface) {
 	const struct rte_ether_hdr *eth;
 	rte_be16_t ether_type;
@@ -207,28 +258,7 @@ ipv4:
 			const struct rte_icmp_hdr *icmp;
 			icmp = rte_pktmbuf_mtod_offset(m, const struct rte_icmp_hdr *, offset);
 			n += snprintf(buf + n, sizeof(buf) - n, " / ICMP");
-
-			if (icmp->icmp_type == RTE_ICMP_TYPE_ECHO_REQUEST && icmp->icmp_code == 0) {
-				n += snprintf(buf + n, sizeof(buf) - n, " echo request");
-			} else if (icmp->icmp_type == RTE_ICMP_TYPE_ECHO_REPLY
-				   && icmp->icmp_code == 0) {
-				n += snprintf(buf + n, sizeof(buf) - n, " echo reply");
-			} else {
-				n += snprintf(
-					buf + n,
-					sizeof(buf) - n,
-					" type=%hhu code=%hhu",
-					icmp->icmp_type,
-					icmp->icmp_code
-				);
-			}
-			n += snprintf(
-				buf + n,
-				sizeof(buf) - n,
-				" id=%u seq=%u",
-				rte_be_to_cpu_16(icmp->icmp_ident),
-				rte_be_to_cpu_16(icmp->icmp_seq_nb)
-			);
+			n += trace_icmp_format(buf + n, sizeof(buf) - n, icmp, sizeof(*icmp));
 			break;
 		}
 		case IPPROTO_IPIP:
