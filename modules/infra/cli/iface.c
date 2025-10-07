@@ -237,6 +237,8 @@ static cmd_status_t iface_list(struct gr_api_client *c, const struct ec_pnode *p
 			SAFE_BUF(snprintf, sizeof(buf), "down");
 		if (iface->state & GR_IFACE_S_RUNNING)
 			SAFE_BUF(snprintf, sizeof(buf), " running");
+		if (iface->state & GR_IFACE_S_ACTIVE)
+			SAFE_BUF(snprintf, sizeof(buf), " active");
 		if (iface->flags & GR_IFACE_F_PROMISC)
 			SAFE_BUF(snprintf, sizeof(buf), " promisc");
 		if (iface->flags & GR_IFACE_F_ALLMULTI)
