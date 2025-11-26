@@ -1,0 +1,15 @@
+# fingerprint: cpu='Intel(R) Core(TM) Ultra 7 165U' workers=1 khz=1200000 opts=-t
+NODE           BATCHES  PACKETS  PKTS/BATCH  CYCLES/BATCH  CYCLES/PKT
+control_input   134144        2         0.0          72.9   4887874.0
+port_tx-p0q0    134144  4292608        32.0        1363.6        42.6
+port_rx-p1q0    135936  4349952        32.0        4300.1       134.4
+iface_output    135936  4349952        32.0        1280.9        40.0
+ip_output       135936  4349952        32.0        1948.5        60.9
+port_tx-p1q0         1        1         1.0        6046.0      6046.0
+eth_output      134656  4308992        32.0        2387.3        74.6
+eth_input       135936  4349952        32.0        1791.6        56.0
+overhead        134144  4292608        32.0        1367.5        42.7
+port_output     134146  4292610        32.0         734.2        22.9
+ip_forward      134144  4292608        32.0         810.8        25.3
+ip_input        134656  4308992        32.0        3902.7       122.0
+iface_input     135936  4349952        32.0         982.2        30.7
