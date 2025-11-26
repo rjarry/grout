@@ -268,7 +268,7 @@ image.
 dnf install git gcc make meson ninja-build pkgconf \
         python3-pyelftools scdoc libmnl-devel \
         libcmocka-devel libevent-devel numactl-devel \
-        libarchive-devel rdma-core-devel
+        libarchive-devel libpcap-devel rdma-core-devel
 
 # grcli build dependencies
 if ! dnf install libecoli-devel; then
@@ -278,7 +278,7 @@ fi
 
 # FRR build dependencies
 dnf install autoconf automake bison elfutils-libelf-devel flex \
-        json-c-devel libcap-devel libtool libyang-devel \
+        json-c-devel libtool libyang-devel \
         protobuf-c-compiler protobuf-c-devel python3-devel readline-devel
 ```
 
@@ -289,7 +289,7 @@ or
 apt install git gcc make meson ninja-build pkgconf \
         python3-pyelftools scdoc \
         libcmocka-dev libevent-dev libnuma-dev libmnl-dev \
-        libarchive-dev libibverbs-dev
+        libarchive-dev libibverbs-dev libyang-dev
 
 # grcli build dependencies
 if ! apt install libecoli-dev; then
@@ -300,7 +300,7 @@ fi
 # FRR build dependencies
 apt install autoconf automake bison flex libtool \
         libjson-c-dev libelf-dev libprotobuf-c-dev protobuf-c-compiler \
-        libreadline-dev libcap-dev librtr-dev libyang-dev
+        libreadline-dev librtr-dev libyang-dev
 ```
 
 Important: `grout` requires at least `gcc` 13 or `clang` 15.
