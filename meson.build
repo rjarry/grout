@@ -75,6 +75,7 @@ dpdk_drivers = [
   'net/ixgbe',
   'net/mlx5',
   'net/null',
+  'net/pcap',
   'net/r8169',
   'net/tap',
   'net/vhost',

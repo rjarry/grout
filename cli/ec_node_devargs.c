@@ -29,6 +29,7 @@ ec_node_devargs_parse(const struct ec_node *, struct ec_pnode *, const struct ec
 #define PCI_CLASS_ETH "0x020000"
 static const char *const dpdk_vdevs[] = {
 	"net_null",
+	"net_pcap",
 	"net_tap",
 	"net_tun",
 	"net_vhost",
