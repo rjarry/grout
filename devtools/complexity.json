@@ -80,10 +80,10 @@
     "uops": 220
   },
   "bond_output_process": {
-    "ipc": 2.77,
-    "self_cycles": 69.8,
-    "total_cycles": 69.8,
-    "uops": 279
+    "ipc": 2.9,
+    "self_cycles": 82.5,
+    "total_cycles": 82.5,
+    "uops": 330
   },
   "control_input_process": {
     "callees": [
@@ -198,10 +198,10 @@
         "uops": 25
       }
     ],
-    "ipc": 2.99,
-    "self_cycles": 70.5,
-    "total_cycles": 87.2,
-    "uops": 282
+    "ipc": 2.98,
+    "self_cycles": 78,
+    "total_cycles": 94.7,
+    "uops": 312
   },
   "eth_output_process": {
     "callees": [
@@ -305,10 +305,10 @@
     "uops": 331
   },
   "iface_output_process": {
-    "ipc": 1.99,
-    "self_cycles": 31.5,
-    "total_cycles": 31.5,
-    "uops": 126
+    "ipc": 2.5,
+    "self_cycles": 42.2,
+    "total_cycles": 42.2,
+    "uops": 169
   },
   "ip6_error_process": {
     "callees": [
@@ -531,10 +531,10 @@
         "uops": 18
       }
     ],
-    "ipc": 2.69,
-    "self_cycles": 45.5,
-    "total_cycles": 56.3,
-    "uops": 182
+    "ipc": 2.66,
+    "self_cycles": 53,
+    "total_cycles": 63.8,
+    "uops": 212
   },
   "ipip_output_process": {
     "callees": [
@@ -553,10 +553,10 @@
         "uops": 21
       }
     ],
-    "ipc": 2.79,
-    "self_cycles": 62.5,
-    "total_cycles": 79.5,
-    "uops": 250
+    "ipc": 2.93,
+    "self_cycles": 70,
+    "total_cycles": 87.0,
+    "uops": 280
   },
   "l2_redirect_process": {
     "ipc": 2.85,
@@ -598,10 +598,10 @@
     "uops": 159
   },
   "loop_xvrf_process": {
-    "ipc": 1.82,
-    "self_cycles": 30,
-    "total_cycles": 30,
-    "uops": 120
+    "ipc": 2.34,
+    "self_cycles": 39.2,
+    "total_cycles": 39.2,
+    "uops": 157
   },
   "loopback_input_process": {
     "ipc": 1.64,
@@ -709,10 +709,10 @@
     "uops": 543
   },
   "port_output_process": {
-    "ipc": 1.57,
-    "self_cycles": 26.5,
-    "total_cycles": 26.5,
-    "uops": 106
+    "ipc": 1.72,
+    "self_cycles": 28.5,
+    "total_cycles": 28.5,
+    "uops": 114
   },
   "rx_process": {
     "callees": [
@@ -832,9 +832,9 @@
         "uops": 21
       }
     ],
-    "ipc": 1.82,
-    "self_cycles": 31.8,
-    "total_cycles": 37.0,
-    "uops": 127
+    "ipc": 2.68,
+    "self_cycles": 53,
+    "total_cycles": 58.2,
+    "uops": 212
   }
 }
