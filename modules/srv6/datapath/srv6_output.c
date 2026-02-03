@@ -52,6 +52,8 @@ srv6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	uint8_t proto, reduc;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		m = objs[i];
 
@@ -149,8 +151,10 @@ srv6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		edge = IP6_OUTPUT;
 
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

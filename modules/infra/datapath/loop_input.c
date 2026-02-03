@@ -42,6 +42,8 @@ static uint16_t loopback_input_process(
 	rte_be16_t eth_type;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 
@@ -53,8 +55,11 @@ static uint16_t loopback_input_process(
 		eth_type = rte_pktmbuf_mtod(mbuf, struct tun_pi *)->proto;
 		rte_pktmbuf_adj(mbuf, sizeof(struct tun_pi));
 		edge = l3_edges[eth_type];
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
+
 	return nb_objs;
 }
 

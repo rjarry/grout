@@ -39,6 +39,8 @@ icmp6_input_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	struct rte_mbuf *mbuf;
 	rte_edge_t next;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		icmp6 = rte_pktmbuf_mtod(mbuf, struct icmp6 *);
@@ -93,8 +95,10 @@ icmp6_input_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 			}
 		}
 next:
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, next);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

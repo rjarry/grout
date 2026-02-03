@@ -14,14 +14,21 @@
 #ifdef __GROUT_UNIT_TEST__
 #include <gr_cmocka.h>
 
-// The function is defined as static inline in the original code, so it cannot be wrapped directly
-// using CMocka's function wrapping mechanism.
-#define rte_node_enqueue_x1 rte_node_enqueue_x1_real // Rename before including
+// These functions are defined as static inline in the original code, so they cannot be wrapped
+// directly using CMocka's function wrapping mechanism.
+#define rte_node_enqueue rte_node_enqueue_real
+#define rte_node_next_stream_move rte_node_next_stream_move_real
 #include <rte_graph_worker.h>
-#undef rte_node_enqueue_x1
+#undef rte_node_enqueue
+#undef rte_node_next_stream_move
 
 static inline void
-rte_node_enqueue_x1(struct rte_graph *, struct rte_node *, rte_edge_t next, void *) {
+rte_node_enqueue(struct rte_graph *, struct rte_node *, rte_edge_t next, void **, uint16_t) {
+	check_expected(next);
+}
+
+static inline void
+rte_node_next_stream_move(struct rte_graph *, struct rte_node *, rte_edge_t next) {
 	check_expected(next);
 }
 #else
@@ -82,4 +89,28 @@ extern struct node_infos node_infos;
 	};                                                                                         \
 	RTE_INIT(gr_drop_register_##node_name) {                                                   \
 		STAILQ_INSERT_TAIL(&node_infos, &drop_info_##node_name, next);                     \
+	}
+
+#define NODE_ENQUEUE_VARS                                                                          \
+	uint16_t run_start = 0;                                                                    \
+	rte_edge_t last_edge = RTE_EDGE_ID_INVALID;
+
+#define NODE_ENQUEUE_NEXT(graph, node, objs, i, edge)                                              \
+	if (last_edge == RTE_EDGE_ID_INVALID) {                                                    \
+		/* first packet */                                                                 \
+		last_edge = edge;                                                                  \
+	} else if (edge != last_edge) {                                                            \
+		/* edge changed, flush previous run */                                             \
+		rte_node_enqueue(graph, node, last_edge, &objs[run_start], i - run_start);         \
+		run_start = i;                                                                     \
+		last_edge = edge;                                                                  \
+	}
+
+#define NODE_ENQUEUE_FLUSH(graph, node, objs, count)                                               \
+	if (run_start == 0 && count != 0) {                                                        \
+		/* all packets went to the same edge */                                            \
+		rte_node_next_stream_move(graph, node, last_edge);                                 \
+	} else if (run_start < count) {                                                            \
+		/* flush final run */                                                              \
+		rte_node_enqueue(graph, node, last_edge, &objs[run_start], count - run_start);     \
 	}

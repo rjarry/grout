@@ -47,6 +47,8 @@ static uint16_t l4_input_local_process(
 	rte_edge_t edge;
 	uint8_t proto;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		edge = BAD_PROTO;
@@ -66,8 +68,11 @@ static uint16_t l4_input_local_process(
 		hdr = rte_pktmbuf_mtod(mbuf, struct rte_udp_hdr *);
 		edge = udp_edges[hdr->dst_port];
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
+
 	return nb_objs;
 }
 

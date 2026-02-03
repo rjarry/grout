@@ -26,6 +26,7 @@ EXCLUDED_FUNCS = frozenset(
         "gr_trace_all_enabled",
         "trace_log_packet",
         "__rte_node_stream_alloc_size",
+        "rte_node_enqueue",
     ]
 )
 

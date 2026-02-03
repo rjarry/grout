@@ -30,6 +30,9 @@ static uint16_t arp_input_reply_process(
 	struct rte_arp_hdr *arp;
 	struct nexthop *remote;
 	struct rte_mbuf *mbuf;
+	rte_edge_t edge;
+
+	NODE_ENQUEUE_VARS;
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -44,11 +47,14 @@ static uint16_t arp_input_reply_process(
 		remote = nh4_lookup(iface->vrf_id, arp->arp_data.arp_sip);
 		if (remote != NULL) {
 			control_output_set_cb(mbuf, arp_probe_input_cb, 0);
-			rte_node_enqueue_x1(graph, node, CONTROL, mbuf);
+			edge = CONTROL;
 		} else {
-			rte_node_enqueue_x1(graph, node, DROP, mbuf);
+			edge = DROP;
 		}
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

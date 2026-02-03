@@ -33,9 +33,8 @@ static uint16_t arp_output_reply_process(
 	struct rte_arp_hdr *arp;
 	struct rte_mbuf *mbuf;
 	rte_edge_t edge;
-	uint16_t num;
 
-	num = 0;
+	NODE_ENQUEUE_VARS;
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -65,7 +64,6 @@ static uint16_t arp_output_reply_process(
 		eth_data->ether_type = RTE_BE16(RTE_ETHER_TYPE_ARP);
 		eth_data->iface = iface;
 		edge = OUTPUT;
-		num++;
 next:
 		if (gr_mbuf_is_traced(mbuf)) {
 			struct rte_arp_hdr *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
@@ -74,10 +72,12 @@ next:
 			else
 				t->arp_opcode = 0;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
 
-	return num;
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
+
+	return nb_objs;
 }
 
 static struct rte_node_register node = {

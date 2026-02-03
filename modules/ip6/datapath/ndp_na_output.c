@@ -61,6 +61,8 @@ static uint16_t ndp_na_output_process(
 	uint16_t payload_len;
 	struct icmp6 *icmp6;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		ctx = control_input_mbuf_data(mbuf)->data;
@@ -109,8 +111,10 @@ static uint16_t ndp_na_output_process(
 			struct icmp6 *t = gr_mbuf_trace_add(mbuf, node, trace_len);
 			memcpy(t, icmp6, trace_len);
 		}
-		rte_node_enqueue_x1(graph, node, OUTPUT, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, OUTPUT);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

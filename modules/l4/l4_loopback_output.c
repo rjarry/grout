@@ -30,6 +30,8 @@ static uint16_t l4_loopback_output_process(
 	struct mbuf_data *d;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		edge = REDIRECT;
@@ -68,8 +70,10 @@ next:
 		if (gr_mbuf_is_traced(mbuf)) {
 			gr_mbuf_trace_add(mbuf, node, 0);
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

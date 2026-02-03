@@ -47,6 +47,8 @@ eth_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	rte_edge_t edge;
 	uint64_t bytes;
 
+	NODE_ENQUEUE_VARS;
+
 	iface = NULL;
 	vlan_iface = NULL;
 	last_iface_id = GR_IFACE_ID_UNDEF;
@@ -132,7 +134,7 @@ next:
 			t->vlan_id = vlan_id;
 			t->iface_id = eth_in->iface->id;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
 
 	if (packets > 0) {
@@ -140,6 +142,8 @@ next:
 		stats->rx_packets += packets;
 		stats->rx_bytes += bytes;
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

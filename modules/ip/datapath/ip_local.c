@@ -31,6 +31,8 @@ static uint16_t ip_input_local_process(
 	rte_edge_t edge;
 	uint16_t i;
 
+	NODE_ENQUEUE_VARS;
+
 	for (i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		ip = rte_pktmbuf_mtod(mbuf, struct rte_ipv4_hdr *);
@@ -50,8 +52,10 @@ static uint16_t ip_input_local_process(
 			data->ttl = ip->time_to_live;
 			rte_pktmbuf_adj(mbuf, rte_ipv4_hdr_len(ip));
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

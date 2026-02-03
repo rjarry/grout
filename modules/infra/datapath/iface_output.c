@@ -41,6 +41,8 @@ static uint16_t iface_output_process(
 	rte_edge_t edge;
 	uint64_t bytes;
 
+	NODE_ENQUEUE_VARS;
+
 	last_iface_id = GR_IFACE_ID_UNDEF;
 	packets = 0;
 	bytes = 0;
@@ -79,7 +81,7 @@ next:
 			uint16_t *iface_id = gr_mbuf_trace_add(m, node, sizeof(*iface_id));
 			*iface_id = iface ? iface->id : 0;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
 
 	if (packets > 0) {
@@ -87,6 +89,8 @@ next:
 		stats->tx_packets += packets;
 		stats->tx_bytes += bytes;
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

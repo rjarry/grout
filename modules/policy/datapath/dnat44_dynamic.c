@@ -34,6 +34,8 @@ static uint16_t dnat44_dynamic_process(
 	rte_edge_t edge;
 	uint16_t i;
 
+	NODE_ENQUEUE_VARS;
+
 	for (i = 0; i < nb_objs; i++) {
 		m = objs[i];
 
@@ -110,8 +112,10 @@ static uint16_t dnat44_dynamic_process(
 			struct rte_ipv4_hdr *t = gr_mbuf_trace_add(m, node, sizeof(*t));
 			*t = *ip;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

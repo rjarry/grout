@@ -23,6 +23,8 @@ ip_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	rte_edge_t edge;
 	uint16_t i;
 
+	NODE_ENQUEUE_VARS;
+
 	for (i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		ip = rte_pktmbuf_mtod(mbuf, struct rte_ipv4_hdr *);
@@ -39,8 +41,10 @@ ip_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 next:
 		if (gr_mbuf_is_traced(mbuf))
 			gr_mbuf_trace_add(mbuf, node, 0);
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

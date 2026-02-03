@@ -36,6 +36,8 @@ dhcp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	struct rte_mbuf *mbuf;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		iface = mbuf_data(mbuf)->iface;
@@ -110,8 +112,10 @@ dhcp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 
 		edge = CONTROL;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

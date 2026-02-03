@@ -90,6 +90,8 @@ static uint16_t control_input_process(
 		if (gr_trace_all_enabled())
 			gr_mbuf_trace_add(mbuf, node, 0); // no data
 		edge = control_input_edges[msg[i].type].edge;
+		// NODE_ENQUEUE_NEXT() and NODE_ENQUEUE_FLUSH() cannot be used here.
+		// This is a source node (node->objs is unused).
 		rte_node_enqueue_x1(graph, node, edge, mbuf);
 	}
 

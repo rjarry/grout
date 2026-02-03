@@ -37,6 +37,8 @@ static uint16_t icmp6_output_process(
 	struct icmp6 *icmp6;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		d = ip6_local_mbuf_data(mbuf);
@@ -79,8 +81,10 @@ static uint16_t icmp6_output_process(
 		o->iface = d->iface;
 		edge = OUTPUT;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

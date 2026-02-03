@@ -39,6 +39,8 @@ static uint16_t ip6_input_local_process(
 	rte_edge_t edge;
 	uint16_t i;
 
+	NODE_ENQUEUE_VARS;
+
 	for (i = 0; i < nb_objs; i++) {
 		m = objs[i];
 		ip = rte_pktmbuf_mtod(m, struct rte_ipv6_hdr *);
@@ -119,8 +121,10 @@ adj_next:
 		rte_pktmbuf_adj(m, d->ext_offset);
 		d->ext_offset = 0;
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

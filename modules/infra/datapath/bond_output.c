@@ -208,6 +208,8 @@ bond_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	rte_edge_t edge;
 	uint64_t bytes;
 
+	NODE_ENQUEUE_VARS;
+
 	last_iface_id = GR_IFACE_ID_UNDEF;
 	packets = 0;
 	bytes = 0;
@@ -245,8 +247,10 @@ bond_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 
 		edge = PORT_OUTPUT;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	if (packets > 0) {
 		stats = iface_get_stats(rte_lcore_id(), last_iface_id);

@@ -45,6 +45,8 @@ ipip_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	rte_edge_t edge;
 	uint64_t bytes;
 
+	NODE_ENQUEUE_VARS;
+
 	last_iface_id = GR_IFACE_ID_UNDEF;
 	last_vrf_id = GR_VRF_ID_ALL;
 	last_src = 0;
@@ -95,8 +97,10 @@ next:
 			struct trace_ipip_data *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			t->iface_id = ipip ? ipip->id : 0;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	if (packets > 0) {
 		stats = iface_get_stats(rte_lcore_id(), last_iface_id);

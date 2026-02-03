@@ -34,6 +34,8 @@ loop_xvrf_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	rte_edge_t edge;
 	uint64_t bytes;
 
+	NODE_ENQUEUE_VARS;
+
 	last_iface_id = GR_IFACE_ID_UNDEF;
 	packets = 0;
 	bytes = 0;
@@ -68,8 +70,10 @@ loop_xvrf_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 			t->vrf_id = eth_data->iface->vrf_id;
 		}
 
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	if (packets > 0) {
 		stats = iface_get_stats(rte_lcore_id(), last_iface_id);

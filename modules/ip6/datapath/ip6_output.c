@@ -60,6 +60,8 @@ ip6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	uint16_t i, sent;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	sent = 0;
 
 	for (i = 0; i < nb_objs; i++) {
@@ -123,8 +125,10 @@ next:
 			struct rte_ipv6_hdr *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *ip;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return sent;
 }

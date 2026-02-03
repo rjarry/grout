@@ -34,6 +34,8 @@ static uint16_t arp_input_request_process(
 	struct rte_mbuf *mbuf;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 
@@ -59,8 +61,10 @@ static uint16_t arp_input_request_process(
 		control_output_set_cb(mbuf, arp_probe_input_cb, 0);
 		edge = CONTROL;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

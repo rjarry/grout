@@ -63,10 +63,10 @@ ip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	const struct nexthop *nh;
 	struct rte_ipv4_hdr *ip;
 	struct rte_mbuf *mbuf;
-	uint16_t i, sent;
 	rte_edge_t edge;
+	uint16_t i;
 
-	sent = 0;
+	NODE_ENQUEUE_VARS;
 
 	for (i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -137,16 +137,17 @@ ip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 		eth_data = eth_output_mbuf_data(mbuf);
 		eth_data->dst = l3->mac;
 		eth_data->ether_type = RTE_BE16(RTE_ETHER_TYPE_IPV4);
-		sent++;
 next:
 		if (gr_mbuf_is_traced(mbuf)) {
 			struct rte_ipv4_hdr *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *ip;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
 
-	return sent;
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
+
+	return nb_objs;
 }
 
 static struct rte_node_register output_node = {

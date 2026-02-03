@@ -66,6 +66,8 @@ static uint16_t ndp_ns_output_process(
 	struct icmp6 *icmp6;
 	rte_edge_t next;
 
+	NODE_ENQUEUE_VARS;
+
 	for (unsigned i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 
@@ -121,8 +123,10 @@ next:
 				memcpy(t, icmp6, trace_len);
 			}
 		}
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, next);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

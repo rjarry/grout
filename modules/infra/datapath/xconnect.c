@@ -28,6 +28,8 @@ xconnect_process(struct rte_graph *graph, struct rte_node *node, void **objs, ui
 	struct rte_mbuf *mbuf;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	last_rx_iface_id = GR_IFACE_ID_UNDEF;
 	last_tx_iface_id = GR_IFACE_ID_UNDEF;
 	rx_packets = 0;
@@ -77,8 +79,10 @@ xconnect_process(struct rte_graph *graph, struct rte_node *node, void **objs, ui
 		if (gr_mbuf_is_traced(mbuf)) {
 			gr_mbuf_trace_add(mbuf, node, 0);
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	if (rx_packets > 0) {
 		stats = iface_get_stats(rte_lcore_id(), last_rx_iface_id);

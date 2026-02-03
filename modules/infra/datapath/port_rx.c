@@ -93,7 +93,10 @@ rx_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t
 			trace_log_packet(mbufs[r], "rx", ctx->iface->name);
 	}
 
-	rte_node_enqueue(graph, node, edges[iface->mode], objs, rx);
+	// NODE_ENQUEUE_NEXT() and NODE_ENQUEUE_FLUSH() are not needed here.
+	// All packets go to the same edge.
+	node->idx = rx;
+	rte_node_next_stream_move(graph, node, edges[iface->mode]);
 
 	return rx;
 }

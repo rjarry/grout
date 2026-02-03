@@ -62,6 +62,8 @@ tx_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t
 		rte_spinlock_unlock(ctx->lock);
 	}
 
+	// NODE_ENQUEUE_NEXT() and NODE_ENQUEUE_FLUSH() cannot be used here.
+	// Most mbufs will be consumed by rte_eth_tx_burst().
 	if (tx_ok < nb_objs)
 		rte_node_enqueue(graph, node, TX_ERROR, &objs[tx_ok], nb_objs - tx_ok);
 

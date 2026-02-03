@@ -54,6 +54,8 @@ ip6_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	rte_edge_t edge;
 	uint16_t i;
 
+	NODE_ENQUEUE_VARS;
+
 	for (i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		ip = rte_pktmbuf_mtod(mbuf, struct rte_ipv6_hdr *);
@@ -147,8 +149,10 @@ next:
 		// Store the resolved next hop for ip6_output to avoid a second route lookup.
 		d = ip6_output_mbuf_data(mbuf);
 		d->nh = nh;
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }
@@ -244,7 +248,7 @@ static void ip6_input_invalid_version(void **) {
 	ipv6_init_default_mbuf(&fake_mbuf);
 
 	fake_mbuf.ipv6_hdr.vtc_flow = rte_cpu_to_be_32(5 << 28);
-	expect_value(rte_node_enqueue_x1, next, BAD_VERSION);
+	expect_value(rte_node_next_stream_move, next, BAD_VERSION);
 	ip6_input_process(NULL, NULL, &obj, 1);
 }
 
@@ -258,7 +262,7 @@ static void ip6_input_invalid_src_mcast_addr(void **) {
 	fake_mbuf.ipv6_hdr.src_addr = (struct rte_ipv6_addr)
 		RTE_IPV6(0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff);
 	// clang-format on
-	expect_value(rte_node_enqueue_x1, next, BAD_ADDR);
+	expect_value(rte_node_next_stream_move, next, BAD_ADDR);
 	ip6_input_process(NULL, NULL, &obj, 1);
 }
 
@@ -272,7 +276,7 @@ static void ip6_input_invalid_dst_unspec_addr(void **) {
 	fake_mbuf.ipv6_hdr.dst_addr = (struct rte_ipv6_addr)
 		RTE_IPV6(0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0);
 	// clang-format on
-	expect_value(rte_node_enqueue_x1, next, BAD_ADDR);
+	expect_value(rte_node_next_stream_move, next, BAD_ADDR);
 	ip6_input_process(NULL, NULL, &obj, 1);
 }
 
@@ -287,7 +291,7 @@ static void ip6_input_invalid_dst_mcast_addr(void **) {
 	fake_mbuf.ipv6_hdr.dst_addr = (struct rte_ipv6_addr)
 		RTE_IPV6(0xff00, 0x00, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1);
 	// clang-format on
-	expect_value(rte_node_enqueue_x1, next, BAD_ADDR);
+	expect_value(rte_node_next_stream_move, next, BAD_ADDR);
 	ip6_input_process(NULL, NULL, &obj, 1);
 
 	// Multicast iface local
@@ -295,7 +299,7 @@ static void ip6_input_invalid_dst_mcast_addr(void **) {
 	fake_mbuf.ipv6_hdr.dst_addr = (struct rte_ipv6_addr)
 		RTE_IPV6(0xff00, 0x01, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1);
 	// clang-format on
-	expect_value(rte_node_enqueue_x1, next, BAD_ADDR);
+	expect_value(rte_node_next_stream_move, next, BAD_ADDR);
 	ip6_input_process(NULL, NULL, &obj, 1);
 }
 
@@ -306,7 +310,7 @@ static void ip6_input_invalid_mbuf_len(void **) {
 	ipv6_init_default_mbuf(&fake_mbuf);
 
 	fake_mbuf.mbuf.data_len = sizeof(struct rte_ipv6_hdr) / 2;
-	expect_value(rte_node_enqueue_x1, next, BAD_LENGTH);
+	expect_value(rte_node_next_stream_move, next, BAD_LENGTH);
 	ip6_input_process(NULL, NULL, &obj, 1);
 }
 

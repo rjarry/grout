@@ -30,6 +30,8 @@ static uint16_t control_output_process(
 		callback = *RTE_MBUF_DYNFIELD(m, cq_callback_offset, control_queue_cb_t *);
 		priv = *RTE_MBUF_DYNFIELD(m, cq_priv_offset, uintptr_t *);
 
+		// NODE_ENQUEUE_NEXT() and NODE_ENQUEUE_FLUSH() cannot be used here.
+		// Most objects will be enqueued in the control queue.
 		if (control_queue_push(callback, m, priv) < 0) {
 			rte_node_enqueue_x1(graph, node, ERROR, m);
 		} else {

@@ -21,6 +21,8 @@ port_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	const struct iface *iface;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (unsigned i = 0; i < nb_objs; i++) {
 		struct rte_mbuf *mbuf = objs[i];
 		iface = mbuf_data(mbuf)->iface;
@@ -31,8 +33,10 @@ port_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 
 		edge = ctx->edges[port->port_id];
 		assert(edge != RTE_EDGE_ID_INVALID);
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

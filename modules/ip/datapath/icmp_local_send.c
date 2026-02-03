@@ -97,6 +97,8 @@ static uint16_t icmp_local_send_process(
 	clock_t *payload;
 	rte_edge_t next;
 
+	NODE_ENQUEUE_VARS;
+
 	for (unsigned i = 0; i < n_objs; i++) {
 		mbuf = objs[i];
 		msg = control_input_mbuf_data(mbuf)->data;
@@ -133,9 +135,11 @@ static uint16_t icmp_local_send_process(
 			struct rte_icmp_hdr *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *icmp;
 		}
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, next);
 		free(msg);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, n_objs);
 
 	return n_objs;
 }

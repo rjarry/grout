@@ -58,6 +58,8 @@ snap_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	struct rte_mbuf *m;
 	rte_edge_t edge;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		m = objs[i];
 		edge = UNKNOWN_DST_MAC;
@@ -77,8 +79,11 @@ snap_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 			t->len = rte_be_to_cpu_16(eth->ether_type);
 			t->iface_id = mbuf_data(m)->iface->id;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
+
 	return nb_objs;
 }
 

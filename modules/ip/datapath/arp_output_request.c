@@ -63,10 +63,9 @@ static uint16_t arp_output_request_process(
 	struct rte_mbuf *mbuf;
 	struct iface *iface;
 	rte_edge_t edge;
-	uint16_t sent;
 	bool is_garp;
 
-	sent = 0;
+	NODE_ENQUEUE_VARS;
 
 	for (unsigned i = 0; i < n_objs; i++) {
 		mbuf = objs[i];
@@ -133,12 +132,13 @@ static uint16_t arp_output_request_process(
 		eth_data->iface = iface_from_id(nh->iface_id);
 
 		edge = OUTPUT;
-		sent++;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
 
-	return sent;
+	NODE_ENQUEUE_FLUSH(graph, node, objs, n_objs);
+
+	return n_objs;
 }
 
 static void arp_output_request_register(void) {

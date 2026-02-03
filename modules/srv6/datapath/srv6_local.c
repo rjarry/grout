@@ -353,6 +353,8 @@ srv6_local_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	rte_edge_t edge;
 	int ret;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		m = objs[i];
 		ret = ip6_fill_infos(m, &ip6_info);
@@ -374,8 +376,10 @@ srv6_local_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		edge = srv6_local_process_pkt(m, sr_d, &ip6_info);
 
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

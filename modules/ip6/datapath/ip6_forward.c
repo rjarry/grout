@@ -19,7 +19,10 @@ static uint16_t
 ip6_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
 	struct rte_ipv6_hdr *ip;
 	struct rte_mbuf *mbuf;
+	rte_edge_t edge;
 	uint16_t i;
+
+	NODE_ENQUEUE_VARS;
 
 	for (i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -28,12 +31,15 @@ ip6_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 			gr_mbuf_trace_add(mbuf, node, 0);
 
 		if (ip->hop_limits <= 1) {
-			rte_node_enqueue_x1(graph, node, TTL_EXCEEDED, mbuf);
-			continue;
+			edge = TTL_EXCEEDED;
+		} else {
+			ip->hop_limits -= 1;
+			edge = OUTPUT;
 		}
-		ip->hop_limits -= 1;
-		rte_node_enqueue_x1(graph, node, OUTPUT, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }

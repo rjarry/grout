@@ -37,6 +37,8 @@ icmp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 	uint16_t cksum;
 	ip4_addr_t ip;
 
+	NODE_ENQUEUE_VARS;
+
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
 		icmp = rte_pktmbuf_mtod(mbuf, struct rte_icmp_hdr *);
@@ -69,8 +71,10 @@ next:
 			struct rte_icmp_hdr *d = gr_mbuf_trace_add(mbuf, node, sizeof(*d));
 			*d = *icmp;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		NODE_ENQUEUE_NEXT(graph, node, objs, i, edge);
 	}
+
+	NODE_ENQUEUE_FLUSH(graph, node, objs, nb_objs);
 
 	return nb_objs;
 }
