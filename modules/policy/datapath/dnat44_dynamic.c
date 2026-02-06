@@ -110,7 +110,7 @@ static uint16_t dnat44_dynamic_process(
 			struct rte_ipv4_hdr *t = gr_mbuf_trace_add(m, node, sizeof(*t));
 			*t = *ip;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

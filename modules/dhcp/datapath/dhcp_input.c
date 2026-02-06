@@ -110,7 +110,7 @@ dhcp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 
 		edge = CONTROL;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

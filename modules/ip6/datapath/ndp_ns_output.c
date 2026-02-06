@@ -121,7 +121,7 @@ next:
 				memcpy(t, icmp6, trace_len);
 			}
 		}
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		rte_node_enqueue_deferred(graph, node, next, i);
 	}
 
 	return nb_objs;

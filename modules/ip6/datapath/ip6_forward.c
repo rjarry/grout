@@ -28,11 +28,11 @@ ip6_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 			gr_mbuf_trace_add(mbuf, node, 0);
 
 		if (ip->hop_limits <= 1) {
-			rte_node_enqueue_x1(graph, node, TTL_EXCEEDED, mbuf);
+			rte_node_enqueue_deferred(graph, node, TTL_EXCEEDED, i);
 			continue;
 		}
 		ip->hop_limits -= 1;
-		rte_node_enqueue_x1(graph, node, OUTPUT, mbuf);
+		rte_node_enqueue_deferred(graph, node, OUTPUT, i);
 	}
 
 	return nb_objs;

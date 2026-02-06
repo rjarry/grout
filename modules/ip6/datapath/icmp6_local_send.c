@@ -127,7 +127,7 @@ static uint16_t icmp6_local_send_process(
 			struct icmp6 *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *icmp6;
 		}
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		rte_node_enqueue_deferred(graph, node, next, i);
 		free(msg);
 	}
 

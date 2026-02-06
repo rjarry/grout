@@ -62,7 +62,7 @@ static uint16_t loopback_input_process(
 			edge = UNKNOWN_PROTO;
 			break;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

@@ -59,7 +59,7 @@ static uint16_t arp_input_request_process(
 		control_output_set_cb(mbuf, arp_probe_input_cb, 0);
 		edge = CONTROL;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

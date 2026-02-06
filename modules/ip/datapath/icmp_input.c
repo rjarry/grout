@@ -69,7 +69,7 @@ next:
 			struct rte_icmp_hdr *d = gr_mbuf_trace_add(mbuf, node, sizeof(*d));
 			*d = *icmp;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

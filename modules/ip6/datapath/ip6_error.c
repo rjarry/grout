@@ -102,7 +102,7 @@ ip6_error_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 		d->iface = iface;
 		edge = ICMP_OUTPUT;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	return nb_objs;

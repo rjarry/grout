@@ -109,7 +109,7 @@ static uint16_t ndp_na_output_process(
 			struct icmp6 *t = gr_mbuf_trace_add(mbuf, node, trace_len);
 			memcpy(t, icmp6, trace_len);
 		}
-		rte_node_enqueue_x1(graph, node, OUTPUT, mbuf);
+		rte_node_enqueue_deferred(graph, node, OUTPUT, i);
 	}
 
 	return nb_objs;

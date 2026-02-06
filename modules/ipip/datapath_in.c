@@ -81,7 +81,7 @@ next:
 			struct trace_ipip_data *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			t->iface_id = ipip ? ipip->id : 0;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	IFACE_STATS_FLUSH(rx);

@@ -93,7 +93,7 @@ icmp6_input_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 			}
 		}
 next:
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		rte_node_enqueue_deferred(graph, node, next, i);
 	}
 
 	return nb_objs;

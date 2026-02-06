@@ -64,7 +64,7 @@ static uint16_t ndp_rs_input_process(
 next:
 		if (gr_mbuf_is_traced(mbuf))
 			gr_mbuf_trace_add(mbuf, node, 0);
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		rte_node_enqueue_deferred(graph, node, next, i);
 	}
 
 	return nb_objs;

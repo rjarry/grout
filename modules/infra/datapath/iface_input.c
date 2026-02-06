@@ -101,7 +101,7 @@ next:
 			t->mode = d->iface->mode;
 			t->vlan_id = vlan_id;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_enqueue_deferred(graph, node, edge, i);
 	}
 
 	IFACE_STATS_FLUSH(rx);
