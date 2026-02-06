@@ -52,7 +52,7 @@ static uint16_t ip_input_local_process(
 			data->ttl = ip->time_to_live;
 			rte_pktmbuf_adj(mbuf, rte_ipv4_hdr_len(ip));
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

@@ -31,7 +31,7 @@ static uint16_t control_output_process(
 		priv = *RTE_MBUF_DYNFIELD(m, cq_priv_offset, uintptr_t *);
 
 		if (control_queue_push(callback, m, priv) < 0) {
-			rte_node_enqueue_x1(graph, node, ERROR, m);
+			rte_node_next_stream_enqueue_x1(graph, node, ERROR, m);
 		} else {
 			sent++;
 			if (gr_mbuf_is_traced(m)) {

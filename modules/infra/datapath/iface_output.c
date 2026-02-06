@@ -96,7 +96,7 @@ static uint16_t iface_output_process(
 		d->iface = iface;
 		edge = iface_type_edges[iface->type];
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 
 	IFACE_STATS_FLUSH(tx);

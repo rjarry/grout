@@ -121,7 +121,7 @@ adj_next:
 		rte_pktmbuf_adj(m, d->ext_offset);
 		d->ext_offset = 0;
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 
 	return nb_objs;

@@ -39,7 +39,7 @@ ip_forward_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 next:
 		if (gr_mbuf_is_traced(mbuf))
 			gr_mbuf_trace_add(mbuf, node, 0);
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

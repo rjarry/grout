@@ -59,7 +59,7 @@ next:
 			struct lacp_pdu *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *lacp;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

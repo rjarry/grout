@@ -149,7 +149,7 @@ next:
 		// Store the resolved next hop for ip6_output to avoid a second route lookup.
 		d = l3_mbuf_data(mbuf);
 		d->nh = nh;
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

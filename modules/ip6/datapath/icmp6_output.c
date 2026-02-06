@@ -79,7 +79,7 @@ static uint16_t icmp6_output_process(
 		o->iface = d->iface;
 		edge = OUTPUT;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

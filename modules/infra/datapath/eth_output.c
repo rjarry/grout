@@ -63,7 +63,7 @@ next:
 			t->ether_type = priv->ether_type;
 		}
 		iface_mbuf_data(mbuf)->vlan_id = 0;
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;
