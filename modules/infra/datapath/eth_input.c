@@ -75,7 +75,7 @@ eth_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 			edge = l2l3_edges[eth->ether_type];
 		}
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 
 	return nb_objs;

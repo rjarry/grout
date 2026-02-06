@@ -61,7 +61,7 @@ next:
 			t->src_addr = src_mac;
 			t->ether_type = priv->ether_type;
 		}
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return nb_objs;

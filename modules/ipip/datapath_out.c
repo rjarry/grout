@@ -84,7 +84,7 @@ ipip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		edge = IP_OUTPUT;
 
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	IFACE_STATS_FLUSH(tx);

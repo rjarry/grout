@@ -102,7 +102,7 @@ static inline uint16_t tx_add_vlan(
 			eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 			data = gr_mbuf_prepend(m, vlan);
 			if (data == NULL) {
-				rte_node_enqueue_x1(graph, node, NO_HEADROOM, m);
+				rte_node_next_stream_enqueue_x1(graph, node, NO_HEADROOM, m);
 				continue;
 			}
 			memmove(data, eth, sizeof(*eth) - sizeof(eth->ether_type));

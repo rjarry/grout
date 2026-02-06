@@ -53,7 +53,7 @@ static uint16_t loopback_input_process(
 		eth_type = rte_pktmbuf_mtod(mbuf, struct tun_pi *)->proto;
 		rte_pktmbuf_adj(mbuf, sizeof(struct tun_pi));
 		edge = l3_edges[eth_type];
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 	return nb_objs;
 }

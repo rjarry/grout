@@ -44,9 +44,9 @@ static uint16_t arp_input_reply_process(
 		remote = nh4_lookup(iface->vrf_id, arp->arp_data.arp_sip);
 		if (remote != NULL) {
 			control_output_set_cb(mbuf, arp_probe_input_cb, 0);
-			rte_node_enqueue_x1(graph, node, CONTROL, mbuf);
+			rte_node_next_stream_enqueue_x1(graph, node, CONTROL, mbuf);
 		} else {
-			rte_node_enqueue_x1(graph, node, DROP, mbuf);
+			rte_node_next_stream_enqueue_x1(graph, node, DROP, mbuf);
 		}
 	}
 

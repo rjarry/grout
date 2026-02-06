@@ -53,7 +53,7 @@ xvrf_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16
 			t->vrf_id = eth_data->iface->vrf_id;
 		}
 
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 
 	IFACE_STATS_FLUSH(rx);

@@ -133,7 +133,7 @@ static uint16_t icmp_local_send_process(
 			struct rte_icmp_hdr *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));
 			*t = *icmp;
 		}
-		rte_node_enqueue_x1(graph, node, next, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, next, mbuf);
 		free(msg);
 	}
 

@@ -94,7 +94,7 @@ static uint16_t l4_input_local_process(
 		hdr = rte_pktmbuf_mtod(mbuf, struct rte_udp_hdr *);
 		edge = udp_edges[hdr->dst_port];
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 	return nb_objs;
 }

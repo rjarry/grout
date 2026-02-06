@@ -77,7 +77,7 @@ snap_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 			t->len = rte_be_to_cpu_16(eth->ether_type);
 			t->iface_id = mbuf_data(m)->iface->id;
 		}
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 	return nb_objs;
 }

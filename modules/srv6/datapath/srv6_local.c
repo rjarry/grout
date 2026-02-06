@@ -435,7 +435,7 @@ srv6_local_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		edge = srv6_local_process_pkt(m, sr_d, &ip6_info);
 
 next:
-		rte_node_enqueue_x1(graph, node, edge, m);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, m);
 	}
 
 	return nb_objs;

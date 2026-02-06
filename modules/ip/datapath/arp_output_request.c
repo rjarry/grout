@@ -135,7 +135,7 @@ static uint16_t arp_output_request_process(
 		edge = OUTPUT;
 		sent++;
 next:
-		rte_node_enqueue_x1(graph, node, edge, mbuf);
+		rte_node_next_stream_enqueue_x1(graph, node, edge, mbuf);
 	}
 
 	return sent;
