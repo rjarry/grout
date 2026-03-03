@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <string.h>
 #include <sys/queue.h>
 
 static STAILQ_HEAD(, cli_route_ops) route_ops = STAILQ_HEAD_INITIALIZER(route_ops);
@@ -56,10 +57,13 @@ static cmd_status_t route_del(struct gr_api_client *c, const struct ec_pnode *p)
 
 static cmd_status_t route_list(struct gr_api_client *c, const struct ec_pnode *p) {
 	uint16_t vrf_id = GR_VRF_ID_UNDEF;
+	uint16_t max_routes = 1000;
 	struct cli_route_ops *ops;
 	int ret = 0;
 
 	if (arg_str(p, "VRF") != NULL && arg_vrf(c, p, "VRF", &vrf_id) < 0)
+		return CMD_ERROR;
+	if (arg_u16(p, "MAX", &max_routes) < 0 && errno != ENOENT)
 		return CMD_ERROR;
 
 	struct gr_table *table = gr_table_new();
@@ -69,11 +73,21 @@ static cmd_status_t route_list(struct gr_api_client *c, const struct ec_pnode *p
 	gr_table_column(table, "NEXT_HOP", GR_DISP_LEFT); // 3
 
 	STAILQ_FOREACH (ops, &route_ops, next) {
-		if ((ret = ops->list(c, vrf_id, table)) < 0)
+		if ((ret = ops->list(c, vrf_id, table, max_routes)) < 0)
 			break;
+		if (max_routes != 0) {
+			if (ret == max_routes)
+				break;
+			max_routes -= ret;
+		}
 	}
 
 	gr_table_free(table);
+
+	if (ret < 0 && errno == EXFULL) {
+		warnf("more routes not displayed");
+		ret = 0;
+	}
 
 	return ret < 0 ? CMD_ERROR : CMD_SUCCESS;
 }
@@ -199,10 +213,14 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 	ret = CLI_COMMAND(
 		ROUTE_CTX(root),
-		"[show] [vrf VRF]",
+		"[show] [(vrf VRF),(max MAX)]",
 		route_list,
 		"Show IP routes.",
-		with_help("L3 routing domain name.", ec_node_dyn("VRF", complete_vrf_names, NULL))
+		with_help("L3 routing domain name.", ec_node_dyn("VRF", complete_vrf_names, NULL)),
+		with_help(
+			"Max. number of routes to display (default 1000, use 0 for unlimited).",
+			ec_node_uint("MAX", 0, UINT16_MAX, 10)
+		)
 	);
 	if (ret < 0)
 		return ret;
