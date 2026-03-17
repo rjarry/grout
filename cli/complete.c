@@ -90,8 +90,10 @@ int bash_complete(struct ec_node *cmdlist) {
 		errorf("invalid COMP_POINT value");
 		goto end;
 	}
-	memccpy(buf, comp_line, 0, i);
-	buf[i] = '\0';
+	if (snprintf(buf, sizeof(buf), "%.*s", (int)i, comp_line) >= (int)sizeof(buf)) {
+		errorf("COMP_LINE is too long");
+		goto end;
+	}
 
 	if ((cmdlist = bash_complete_node(cmdlist)) == NULL) {
 		errorf("bash_complete_node: %s", strerror(errno));
