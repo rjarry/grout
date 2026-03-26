@@ -388,11 +388,17 @@ struct gr_graph_dump_req {
 typedef enum : uint16_t {
 	GR_GRAPH_SET_RX_BURST = GR_BIT16(0),
 	GR_GRAPH_SET_VECTOR = GR_BIT16(1),
+	GR_GRAPH_SET_ICMP_ERROR = GR_BIT16(2),
+	GR_GRAPH_SET_ARP = GR_BIT16(3),
+	GR_GRAPH_SET_ICMP = GR_BIT16(4),
 } gr_graph_conf_set_attr_t;
 
 struct gr_graph_conf {
 	uint16_t rx_burst_max; // default 64, max 256
 	uint16_t vector_max; // default 64, max 256
+	uint16_t icmp_error_rate; // ICMP errors/sec per node per worker, 0 = no limit, default 1000
+	uint16_t arp_rate; // ARP packets/sec per worker, 0 = no limit, default 1000
+	uint16_t icmp_rate; // ICMP/ICMPv6 input packets/sec per worker, 0 = no limit, default 1000
 };
 
 #define GR_GRAPH_CONF_GET REQUEST_TYPE(GR_INFRA_MODULE, 0x0031)
