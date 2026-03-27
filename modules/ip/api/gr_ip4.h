@@ -37,7 +37,7 @@ struct gr_ip4_route_add_req {
 	ip4_addr_t nh;
 	uint32_t nh_id;
 	gr_nh_origin_t origin;
-	uint8_t exist_ok;
+	bool exist_ok;
 };
 
 // struct gr_ip4_route_add_resp { };
@@ -48,7 +48,7 @@ struct gr_ip4_route_add_req {
 struct gr_ip4_route_del_req {
 	uint16_t vrf_id;
 	struct ip4_net dest;
-	uint8_t missing_ok;
+	bool missing_ok;
 };
 
 // struct gr_ip4_route_del_resp { };
@@ -82,7 +82,7 @@ STREAM_RESP(struct gr_ip4_route);
 
 struct gr_ip4_addr_add_req {
 	struct gr_ip4_ifaddr addr;
-	uint8_t exist_ok;
+	bool exist_ok;
 };
 
 // struct gr_ip4_addr_add_resp { };
@@ -92,7 +92,7 @@ struct gr_ip4_addr_add_req {
 
 struct gr_ip4_addr_del_req {
 	struct gr_ip4_ifaddr addr;
-	uint8_t missing_ok;
+	bool missing_ok;
 };
 
 // struct gr_ip4_addr_del_resp { };

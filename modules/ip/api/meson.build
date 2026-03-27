@@ -3,3 +3,4 @@
 
 api_headers += files('gr_ip4.h')
 api_inc += include_directories('.')
+lib_src += files('ip4_codec.c')
