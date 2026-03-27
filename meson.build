@@ -116,6 +116,7 @@ cli_cflags = []
 
 tests = []
 
+subdir('mpack')
 subdir('api')
 subdir('main')
 subdir('modules')
@@ -125,6 +126,7 @@ subdir('frr')
 libgrout = shared_library(
   'grout', lib_src,
   include_directories: api_inc,
+  dependencies: [mpack_dep],
   install: true,
 )
 libgrout_dep = declare_dependency(

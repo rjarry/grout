@@ -4,6 +4,7 @@
 quiet-level = 35
 skip =
 	build/*,
+	mpack/*,
 	subprojects/*,
 ignore-words-list =
 	ND,
