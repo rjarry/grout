@@ -20,6 +20,7 @@ api_headers += configure_file(
 lib_src += files(
   'client.c',
   'codec.c',
+  'main_codec.c',
   'printf.c',
   'string.c',
 )
