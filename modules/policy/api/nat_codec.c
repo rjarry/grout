@@ -3,6 +3,7 @@
 
 #include <gr_codec.h>
 #include <gr_nat.h>
+#include <gr_nexthop_codec.h>
 
 #include <stddef.h>
 
@@ -72,7 +73,17 @@ static const struct gr_api_codec snat44_list_codec = {
 	.resp_size = sizeof(struct gr_snat44_policy),
 };
 
+static const struct gr_field_desc nh_info_dnat_fields[] = {
+	GR_FIELD_IP4(struct gr_nexthop_info_dnat, match),
+	GR_FIELD_IP4(struct gr_nexthop_info_dnat, replace),
+	GR_FIELD_END,
+};
+
 static void __attribute__((constructor)) nat_codecs_init(void) {
+	gr_nh_info_codec_register(
+		GR_NH_T_DNAT, nh_info_dnat_fields, sizeof(struct gr_nexthop_info_dnat)
+	);
+
 	gr_api_codec_register(GR_DNAT44_ADD, &dnat44_add_codec);
 	gr_api_codec_register(GR_DNAT44_DEL, &dnat44_del_codec);
 	gr_api_codec_register(GR_DNAT44_LIST, &dnat44_list_codec);

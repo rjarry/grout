@@ -3,3 +3,4 @@
 
 api_headers += files('gr_srv6.h')
 api_inc += include_directories('.')
+lib_src += files('srv6_codec.c')
