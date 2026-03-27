@@ -4,7 +4,6 @@
 #include <gr_api.h>
 #include <gr_errno.h>
 #include <gr_macro.h>
-#include <gr_version.h>
 
 #include <assert.h>
 #include <errno.h>
@@ -49,10 +48,6 @@ struct gr_api_client *gr_api_client_connect(const char *sock_path) {
 	}
 
 	if (connect(client->sock_fd, &addr.a, sizeof(addr.un)) < 0)
-		goto err;
-
-	struct gr_hello_req hello = {.version = GROUT_VERSION};
-	if (gr_api_client_send_recv(client, GR_HELLO, sizeof(hello), &hello, NULL) < 0)
 		goto err;
 
 	return client;
@@ -133,9 +128,10 @@ long int gr_api_client_send(
 		return errno_set(EINVAL);
 
 	struct gr_api_request req = {
+		.api_version = GR_API_VERSION,
 		.id = ++message_id,
-		.payload_len = tx_len,
 		.type = req_type,
+		.payload_len = tx_len,
 	};
 
 	if (send_all(client, &req, sizeof(req)) < 0)

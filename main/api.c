@@ -12,7 +12,6 @@
 #include <gr_macro.h>
 #include <gr_queue.h>
 #include <gr_vec.h>
-#include <gr_version.h>
 
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
@@ -201,15 +200,6 @@ static struct api_out unsubscribe(const void * /*request*/, struct api_ctx *ctx)
 	return api_out(0, 0, NULL);
 }
 
-static struct api_out hello(const void *request, struct api_ctx *) {
-	const struct gr_hello_req *req = request;
-
-	if (strncmp(req->version, GROUT_VERSION, sizeof(req->version)) != 0)
-		return api_out(EBADMSG, 0, NULL);
-
-	return api_out(0, 0, NULL);
-}
-
 static void disconnect_client(struct api_ctx *ctx) {
 	assert(ctx != NULL);
 	assert(ctx->bev != NULL);
@@ -231,7 +221,9 @@ void api_send(struct api_ctx *ctx, uint32_t len, const void *payload) {
 	LOG(DEBUG, "pid=%d for_id=%u len=%u", ctx->pid, ctx->header.id, len);
 
 	struct gr_api_response resp = {
+		.api_version = GR_API_VERSION,
 		.for_id = ctx->header.id,
+		.type = ctx->header.type,
 		.payload_len = len,
 		.status = 0,
 	};
@@ -265,6 +257,22 @@ static void read_cb(struct bufferevent *bev, void *priv) {
 		}
 
 		ctx->header_complete = true;
+
+		if (ctx->header.api_version != GR_API_VERSION) {
+			LOG(ERR,
+			    "pid=%d incompatible api_version=0x%08x (expected 0x%08x)",
+			    ctx->pid,
+			    ctx->header.api_version,
+			    GR_API_VERSION);
+			struct gr_api_response resp = {
+				.api_version = GR_API_VERSION,
+				.for_id = ctx->header.id,
+				.type = ctx->header.type,
+				.status = EBADMSG,
+			};
+			bufferevent_write(bev, &resp, sizeof(resp));
+			goto close;
+		}
 	}
 
 	if (evbuffer_get_length(input) < ctx->header.payload_len) {
@@ -314,7 +322,9 @@ send:
 	    out.len);
 
 	struct gr_api_response resp = {
+		.api_version = GR_API_VERSION,
 		.for_id = ctx->header.id,
+		.type = ctx->header.type,
 		.status = out.status,
 		.payload_len = out.len,
 	};
@@ -451,5 +461,4 @@ void api_socket_stop(struct event_base *) {
 RTE_INIT(init) {
 	gr_api_handler(GR_EVENT_SUBSCRIBE, subscribe);
 	gr_api_handler(GR_EVENT_UNSUBSCRIBE, unsubscribe);
-	gr_api_handler(GR_HELLO, hello);
 }
