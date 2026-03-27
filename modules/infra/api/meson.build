@@ -14,4 +14,7 @@ api_headers += files(
   'gr_nexthop.h',
 )
 api_inc += include_directories('.')
-lib_src += files('nexthop_codec.c')
+lib_src += files(
+  'infra_codec.c',
+  'nexthop_codec.c',
+)

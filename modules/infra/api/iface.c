@@ -4,6 +4,7 @@
 #include <gr_api.h>
 #include <gr_event.h>
 #include <gr_iface.h>
+#include <gr_iface_codec.h>
 #include <gr_infra.h>
 #include <gr_log.h>
 #include <gr_metrics.h>

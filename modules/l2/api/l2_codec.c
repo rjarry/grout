@@ -2,9 +2,30 @@
 // Copyright (c) 2026 Robin Jarry
 
 #include <gr_codec.h>
+#include <gr_iface_codec.h>
 #include <gr_l2.h>
 
 #include <stddef.h>
+
+// Bridge iface info.
+static const struct gr_field_desc bridge_info_fields[] = {
+	GR_FIELD_U16(struct gr_iface_info_bridge, ageing_time),
+	GR_FIELD_U16(struct gr_iface_info_bridge, flags),
+	GR_FIELD_MAC(struct gr_iface_info_bridge, mac),
+	GR_FIELD_U16(struct gr_iface_info_bridge, n_members),
+	GR_FIELD_ARRAY(struct gr_iface_info_bridge, members, n_members, NULL),
+	GR_FIELD_END,
+};
+
+// VXLAN iface info.
+static const struct gr_field_desc vxlan_info_fields[] = {
+	GR_FIELD_U32(struct gr_iface_info_vxlan, vni),
+	GR_FIELD_U16(struct gr_iface_info_vxlan, encap_vrf_id),
+	GR_FIELD_U16(struct gr_iface_info_vxlan, dst_port),
+	GR_FIELD_IP4(struct gr_iface_info_vxlan, local),
+	GR_FIELD_MAC(struct gr_iface_info_vxlan, mac),
+	GR_FIELD_END,
+};
 
 static const struct gr_field_desc fdb_entry_fields[] = {
 	GR_FIELD_U16(struct gr_fdb_entry, bridge_id),
@@ -120,6 +141,13 @@ static const struct gr_api_codec flood_list_codec = {
 };
 
 static void __attribute__((constructor)) l2_codecs_init(void) {
+	gr_iface_info_codec_register(
+		GR_IFACE_TYPE_BRIDGE, bridge_info_fields, sizeof(struct gr_iface_info_bridge)
+	);
+	gr_iface_info_codec_register(
+		GR_IFACE_TYPE_VXLAN, vxlan_info_fields, sizeof(struct gr_iface_info_vxlan)
+	);
+
 	gr_api_codec_register(GR_FDB_ADD, &fdb_add_codec);
 	gr_api_codec_register(GR_FDB_DEL, &fdb_del_codec);
 	gr_api_codec_register(GR_FDB_FLUSH, &fdb_flush_codec);
