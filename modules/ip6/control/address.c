@@ -534,6 +534,4 @@ RTE_INIT(address_constructor) {
 	gr_event_subscribe(GR_EVENT_IFACE_PRE_REMOVE, ip6_iface_event_handler);
 	gr_event_subscribe(GR_EVENT_IFACE_STATUS_UP, ip6_iface_event_handler);
 	gr_event_subscribe(GR_EVENT_IFACE_MAC_CHANGE, ip6_iface_event_handler);
-	gr_event_serializer(GR_EVENT_IP6_ADDR_ADD, NULL, sizeof(struct gr_ip6_ifaddr));
-	gr_event_serializer(GR_EVENT_IP6_ADDR_DEL, NULL, sizeof(struct gr_ip6_ifaddr));
 }

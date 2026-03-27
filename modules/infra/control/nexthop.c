@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024 Robin Jarry
 
+#include <gr_codec.h>
 #include <gr_control_queue.h>
 #include <gr_event.h>
 #include <gr_id_pool.h>
@@ -8,6 +9,7 @@
 #include <gr_log.h>
 #include <gr_metrics.h>
 #include <gr_module.h>
+#include <gr_nexthop_codec.h>
 #include <gr_nh_control.h>
 #include <gr_rcu.h>
 #include <gr_vec.h>
@@ -530,17 +532,17 @@ static void nh_fini(struct event_base *) {
 	rte_mempool_free(pool);
 }
 
-int nexthop_serialize(const void *obj, void **buf) {
-	struct gr_nexthop *nh;
+ssize_t nexthop_serialize(const void *obj, void *buf, size_t buf_len) {
 	size_t len = 0;
 
-	nh = nexthop_to_api(obj, &len);
+	struct gr_nexthop *nh = nexthop_to_api(obj, &len);
 	if (nh == NULL)
 		return -errno;
 
-	*buf = nh;
+	ssize_t n = gr_nexthop_encode(buf, buf_len, nh, len);
+	free(nh);
 
-	return len;
+	return n;
 }
 
 static struct gr_module module = {
@@ -576,9 +578,9 @@ static struct gr_metrics_collector nexthop_collector = {
 };
 
 RTE_INIT(init) {
-	gr_event_serializer(GR_EVENT_NEXTHOP_NEW, nexthop_serialize, 0);
-	gr_event_serializer(GR_EVENT_NEXTHOP_DELETE, nexthop_serialize, 0);
-	gr_event_serializer(GR_EVENT_NEXTHOP_UPDATE, nexthop_serialize, 0);
+	gr_event_serializer(GR_EVENT_NEXTHOP_NEW, NULL, nexthop_serialize);
+	gr_event_serializer(GR_EVENT_NEXTHOP_DELETE, NULL, nexthop_serialize);
+	gr_event_serializer(GR_EVENT_NEXTHOP_UPDATE, NULL, nexthop_serialize);
 	gr_event_subscribe(GR_EVENT_IFACE_PRE_REMOVE, nexthop_iface_cleanup);
 	gr_register_module(&module);
 	gr_metrics_register(&nexthop_collector);

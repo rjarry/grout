@@ -108,8 +108,8 @@ int nexthop_update(struct nexthop *, const struct gr_nexthop_base *, const void 
 // The returned value must be deallocated with free().
 struct gr_nexthop *nexthop_to_api(const struct nexthop *, size_t *len);
 
-// Uses nexthop_export to serve as callback for gr_event_serializer.
-int nexthop_serialize(const void *obj, void **buf);
+// Serialize a nexthop event to MPack. Returns malloc'd buffer. Caller frees.
+ssize_t nexthop_serialize(const void *obj, void *buf, size_t buf_len);
 
 // Clean all routes that reference a given nexthop.
 void nexthop_routes_cleanup(struct nexthop *);

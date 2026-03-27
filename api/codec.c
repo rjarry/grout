@@ -41,6 +41,81 @@ const struct gr_api_codec *gr_api_codec_lookup(uint32_t req_type) {
 	return mod_codecs[mod]->codecs[id];
 }
 
+// Event codec registry (separate namespace from request codecs).
+static struct module_codecs *ev_codecs[UINT16_MAX + 1];
+
+void gr_event_codec_register(uint32_t ev_type, const struct gr_api_codec *codec) {
+	uint16_t mod = (ev_type >> 16) & 0xffff;
+	uint16_t id = ev_type & 0xffff;
+
+	if (ev_codecs[mod] == NULL) {
+		ev_codecs[mod] = calloc(1, sizeof(*ev_codecs[mod]));
+		if (ev_codecs[mod] == NULL)
+			abort();
+	}
+	ev_codecs[mod]->codecs[id] = codec;
+}
+
+const struct gr_api_codec *gr_event_codec_lookup(uint32_t ev_type) {
+	uint16_t mod = (ev_type >> 16) & 0xffff;
+	uint16_t id = ev_type & 0xffff;
+
+	if (ev_codecs[mod] == NULL)
+		return NULL;
+	return ev_codecs[mod]->codecs[id];
+}
+
+// Event serializer registry.
+struct event_serializer {
+	const struct gr_field_desc *fields;
+	gr_event_serialize_fn callback;
+};
+
+struct module_serializers {
+	struct event_serializer serializers[UINT16_MAX + 1];
+};
+
+static struct module_serializers *mod_serializers[UINT16_MAX + 1];
+
+void gr_event_serializer(
+	uint32_t ev_type,
+	const struct gr_field_desc *fields,
+	gr_event_serialize_fn callback
+) {
+	uint16_t mod = (ev_type >> 16) & 0xffff;
+	uint16_t id = ev_type & 0xffff;
+
+	if (callback == NULL && fields == NULL)
+		abort();
+
+	if (mod_serializers[mod] == NULL) {
+		mod_serializers[mod] = calloc(1, sizeof(*mod_serializers[mod]));
+		if (mod_serializers[mod] == NULL)
+			abort();
+	}
+	mod_serializers[mod]->serializers[id] = (struct event_serializer) {
+		.fields = fields,
+		.callback = callback,
+	};
+}
+
+ssize_t gr_event_serialize(uint32_t ev_type, const void *obj, void *buf, size_t buf_len) {
+	uint16_t mod = (ev_type >> 16) & 0xffff;
+	uint16_t id = ev_type & 0xffff;
+	struct module_serializers *sers = mod_serializers[mod];
+
+	if (sers == NULL || obj == NULL)
+		return -EINVAL;
+
+	struct event_serializer *s = &sers->serializers[id];
+	if (s->callback != NULL)
+		return s->callback(obj, buf, buf_len);
+	if (s->fields != NULL)
+		return gr_mpack_encode(buf, buf_len, s->fields, obj);
+
+	return -ENOTSUP;
+}
+
 // Shared sub-field tables for network types.
 const struct gr_field_desc gr_ip4_net_fields[] = {
 	GR_FIELD_IP4(struct ip4_net, ip),

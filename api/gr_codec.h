@@ -65,6 +65,28 @@ void gr_api_codec_register(uint32_t req_type, const struct gr_api_codec *);
 // Look up the codec for a given request type. Returns NULL if none registered.
 const struct gr_api_codec *gr_api_codec_lookup(uint32_t req_type);
 
+// Event codec (client decode side, keyed by ev_type).
+// Uses resp_fields/resp_size/decode_resp from gr_api_codec for decoding.
+void gr_event_codec_register(uint32_t ev_type, const struct gr_api_codec *);
+const struct gr_api_codec *gr_event_codec_lookup(uint32_t ev_type);
+
+// Event serializer (server encode side, also in libgrout so codec
+// constructors can register simple event types alongside their codecs).
+// Custom callbacks convert internal objects to MPack directly.
+// Writes into buf (buf_len capacity). Returns bytes written or negative errno.
+typedef ssize_t (*gr_event_serialize_fn)(const void *obj, void *buf, size_t buf_len);
+
+// Register an event serializer. For simple types (obj is the API struct),
+// pass fields. For complex types needing conversion, pass a callback.
+void gr_event_serializer(
+	uint32_t ev_type,
+	const struct gr_field_desc *fields,
+	gr_event_serialize_fn callback
+);
+
+// Serialize an event to MPack into buf. Returns bytes written or negative errno.
+ssize_t gr_event_serialize(uint32_t ev_type, const void *obj, void *buf, size_t buf_len);
+
 // Helper macros for declaring field descriptor table entries.
 // s: struct type, f: field name.
 #define GR_FIELD(s, f, t)                                                                          \

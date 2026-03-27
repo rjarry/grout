@@ -408,8 +408,5 @@ RTE_INIT(init) {
 	gr_api_handler(GR_FDB_LIST, fdb_list);
 	gr_api_handler(GR_FDB_CONFIG_GET, fdb_config_get);
 	gr_api_handler(GR_FDB_CONFIG_SET, fdb_config_set);
-	gr_event_serializer(GR_EVENT_FDB_ADD, NULL, sizeof(struct gr_fdb_entry));
-	gr_event_serializer(GR_EVENT_FDB_DEL, NULL, sizeof(struct gr_fdb_entry));
-	gr_event_serializer(GR_EVENT_FDB_UPDATE, NULL, sizeof(struct gr_fdb_entry));
 	gr_register_module(&module);
 }

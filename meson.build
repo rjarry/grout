@@ -121,7 +121,6 @@ subdir('api')
 subdir('main')
 subdir('modules')
 subdir('cli')
-subdir('frr')
 
 libgrout = shared_library(
   'grout', lib_src,
@@ -133,6 +132,8 @@ libgrout_dep = declare_dependency(
   link_with: libgrout,
   include_directories: api_inc,
 )
+
+subdir('frr')
 
 grout_exe = executable(
   'grout', src,

@@ -222,4 +222,12 @@ static void __attribute__((constructor)) ip4_codecs_init(void) {
 	gr_api_codec_register(GR_IP4_ICMP_RECV, &ip4_icmp_recv_codec);
 	gr_api_codec_register(GR_IP4_FIB_DEFAULT_SET, &ip4_fib_default_set_codec);
 	gr_api_codec_register(GR_IP4_FIB_INFO_LIST, &ip4_fib_info_list_codec);
+
+	// Event codecs reuse the list response codecs.
+	gr_event_serializer(GR_EVENT_IP_ADDR_ADD, ip4_ifaddr_fields, NULL);
+	gr_event_serializer(GR_EVENT_IP_ADDR_DEL, ip4_ifaddr_fields, NULL);
+	gr_event_codec_register(GR_EVENT_IP_ADDR_ADD, &ip4_addr_list_codec);
+	gr_event_codec_register(GR_EVENT_IP_ADDR_DEL, &ip4_addr_list_codec);
+	gr_event_codec_register(GR_EVENT_IP_ROUTE_ADD, &ip4_route_list_codec);
+	gr_event_codec_register(GR_EVENT_IP_ROUTE_DEL, &ip4_route_list_codec);
 }

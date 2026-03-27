@@ -127,17 +127,18 @@ static struct api_out iface_set(const void *request, struct api_ctx *) {
 	return api_out(0, 0, NULL);
 }
 
-static int iface_event_serialize(const void *obj, void **buf) {
+static ssize_t iface_event_serialize(const void *obj, void *buf, size_t buf_len) {
 	struct gr_iface *api_iface = iface_to_api(obj);
 	if (api_iface == NULL)
-		return errno_set(ENOMEM);
-
-	*buf = api_iface;
+		return -errno;
 
 	const struct iface_type *type = iface_type_get(api_iface->type);
 	assert(type != NULL);
 
-	return sizeof(*api_iface) + type->pub_size;
+	ssize_t n = gr_iface_encode(buf, buf_len, api_iface, sizeof(*api_iface) + type->pub_size);
+	free(api_iface);
+
+	return n;
 }
 
 METRIC_GAUGE(m_up, "iface_up", "Interface administrative state.");
@@ -240,13 +241,13 @@ RTE_INIT(infra_api_init) {
 	gr_api_handler(GR_IFACE_GET, iface_get);
 	gr_api_handler(GR_IFACE_LIST, iface_list);
 	gr_api_handler(GR_IFACE_SET, iface_set);
-	gr_event_serializer(GR_EVENT_IFACE_ADD, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_POST_ADD, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_PRE_REMOVE, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_REMOVE, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_POST_RECONFIG, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_STATUS_UP, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_STATUS_DOWN, iface_event_serialize, 0);
-	gr_event_serializer(GR_EVENT_IFACE_MAC_CHANGE, iface_event_serialize, 0);
+	gr_event_serializer(GR_EVENT_IFACE_ADD, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_POST_ADD, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_PRE_REMOVE, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_REMOVE, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_POST_RECONFIG, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_STATUS_UP, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_STATUS_DOWN, NULL, iface_event_serialize);
+	gr_event_serializer(GR_EVENT_IFACE_MAC_CHANGE, NULL, iface_event_serialize);
 	gr_metrics_register(&iface_collector);
 }

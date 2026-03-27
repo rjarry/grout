@@ -251,4 +251,14 @@ static void __attribute__((constructor)) ip6_codecs_init(void) {
 	gr_api_codec_register(GR_IP6_ICMP6_RECV, &ip6_icmp6_recv_codec);
 	gr_api_codec_register(GR_IP6_FIB_DEFAULT_SET, &ip6_fib_default_set_codec);
 	gr_api_codec_register(GR_IP6_FIB_INFO_LIST, &ip6_fib_info_list_codec);
+
+	// Event codecs reuse the list response codecs.
+	gr_event_serializer(GR_EVENT_IP6_ADDR_ADD, ip6_ifaddr_fields, NULL);
+	gr_event_serializer(GR_EVENT_IP6_ADDR_DEL, ip6_ifaddr_fields, NULL);
+	gr_event_codec_register(GR_EVENT_IP6_ADDR_ADD, &ip6_addr_list_codec);
+	gr_event_codec_register(GR_EVENT_IP6_ADDR_DEL, &ip6_addr_list_codec);
+
+	// Route event serializers are in daemon code (modules/ip6/control/route.c).
+	gr_event_codec_register(GR_EVENT_IP6_ROUTE_ADD, &ip6_route_list_codec);
+	gr_event_codec_register(GR_EVENT_IP6_ROUTE_DEL, &ip6_route_list_codec);
 }

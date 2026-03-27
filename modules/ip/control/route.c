@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Robin Jarry
 
 #include <gr_api.h>
+#include <gr_codec.h>
 #include <gr_event.h>
 #include <gr_iface.h>
 #include <gr_infra.h>
@@ -11,6 +12,7 @@
 #include <gr_metrics.h>
 #include <gr_module.h>
 #include <gr_net_types.h>
+#include <gr_nexthop_codec.h>
 #include <gr_queue.h>
 #include <gr_rcu.h>
 #include <gr_string.h>
@@ -612,32 +614,37 @@ static struct gr_metrics_collector rib4_collector = {
 	.collect = rib4_metrics_collect,
 };
 
-static int serialize_route4_event(const void *obj, void **buf) {
-	const struct route4_event *priv = obj;
-	struct gr_ip4_route *r;
-	struct gr_nexthop *nh;
-	size_t nh_len;
-	int len;
+static const struct gr_field_desc route4_event_fields[] = {
+	GR_FIELD_IP4_NET(struct gr_ip4_route, dest),
+	GR_FIELD_U16(struct gr_ip4_route, vrf_id),
+	GR_FIELD_U8(struct gr_ip4_route, origin),
+	GR_FIELD_END,
+};
 
-	nh = nexthop_to_api(priv->nh, &nh_len);
+static ssize_t serialize_route4_event(const void *obj, void *buf, size_t buf_len) {
+	const struct route4_event *priv = obj;
+	size_t nh_len;
+
+	struct gr_nexthop *nh = nexthop_to_api(priv->nh, &nh_len);
 	if (nh == NULL)
 		return -errno;
 
-	len = sizeof(*r) - sizeof(r->nh) + nh_len;
+	struct gr_ip4_route tmp = {
+		.dest = priv->dest,
+		.vrf_id = priv->vrf_id,
+		.origin = priv->origin,
+	};
 
-	r = malloc(len);
-	if (r == NULL) {
-		len = -errno;
-	} else {
-		r->vrf_id = priv->vrf_id;
-		r->dest = priv->dest;
-		r->origin = priv->origin;
-		memcpy(&r->nh, nh, nh_len);
-		*buf = r;
+	ssize_t n = gr_mpack_encode(buf, buf_len, route4_event_fields, &tmp);
+	if (n < 0) {
+		free(nh);
+		return n;
 	}
+
+	ssize_t n2 = gr_nexthop_encode((char *)buf + n, buf_len - n, nh, nh_len);
 	free(nh);
 
-	return len;
+	return n2 < 0 ? n2 : n + n2;
 }
 
 struct fib4_migrate_ctx {
@@ -833,8 +840,8 @@ RTE_INIT(control_ip_init) {
 	gr_api_handler(GR_IP4_ROUTE_LIST, route4_list);
 	gr_api_handler(GR_IP4_FIB_DEFAULT_SET, fib4_default_set);
 	gr_api_handler(GR_IP4_FIB_INFO_LIST, fib4_info_list);
-	gr_event_serializer(GR_EVENT_IP_ROUTE_ADD, serialize_route4_event, 0);
-	gr_event_serializer(GR_EVENT_IP_ROUTE_DEL, serialize_route4_event, 0);
+	gr_event_serializer(GR_EVENT_IP_ROUTE_ADD, NULL, serialize_route4_event);
+	gr_event_serializer(GR_EVENT_IP_ROUTE_DEL, NULL, serialize_route4_event);
 	gr_register_module(&route4_module);
 	gr_metrics_register(&rib4_collector);
 	vrf_fib_ops_register(GR_AF_IP4, &fib4_ops);

@@ -445,4 +445,14 @@ static void __attribute__((constructor)) infra_codecs_init(void) {
 	// CPU affinity.
 	gr_api_codec_register(GR_AFFINITY_CPU_GET, &affinity_cpu_get_codec);
 	gr_api_codec_register(GR_AFFINITY_CPU_SET, &affinity_cpu_set_codec);
+
+	// Iface event codecs reuse the list response codec.
+	gr_event_codec_register(GR_EVENT_IFACE_ADD, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_POST_ADD, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_PRE_REMOVE, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_REMOVE, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_POST_RECONFIG, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_STATUS_UP, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_STATUS_DOWN, &iface_list_codec);
+	gr_event_codec_register(GR_EVENT_IFACE_MAC_CHANGE, &iface_list_codec);
 }

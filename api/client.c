@@ -274,14 +274,54 @@ int gr_api_client_event_recv(const struct gr_api_client *c, struct gr_api_event 
 		errno = EMSGSIZE;
 		goto err;
 	}
-	if (header.payload_len > 0) {
-		if ((*event = malloc(sizeof(header) + header.payload_len)) == NULL)
-			goto err;
-		(*event)->ev_type = header.ev_type;
-		(*event)->payload_len = header.payload_len;
-		if (recv_all(c, PAYLOAD(*event), header.payload_len) != (int)header.payload_len)
-			goto err;
+	if (header.payload_len == 0)
+		return 0;
+
+	// Receive MPack-encoded payload.
+	void *raw = malloc(header.payload_len);
+	if (raw == NULL)
+		goto err;
+	if (recv_all(c, raw, header.payload_len) != (int)header.payload_len) {
+		free(raw);
+		goto err;
 	}
+
+	const struct gr_api_codec *codec = gr_event_codec_lookup(header.ev_type);
+	void *payload = NULL;
+	size_t payload_len = 0;
+
+	if (codec != NULL) {
+		if (codec->decode_resp) {
+			payload = codec->decode_resp(raw, header.payload_len);
+			// The decoded allocation size is unknown. Use
+			if (payload != NULL)
+				payload_len = codec->resp_size;
+		} else if (codec->resp_fields != NULL && codec->resp_size > 0) {
+			payload = gr_mpack_decode(
+				raw, header.payload_len, codec->resp_fields, codec->resp_size, NULL
+			);
+			if (payload != NULL)
+				payload_len = codec->resp_size;
+		}
+		free(raw);
+	} else {
+		payload = raw;
+		payload_len = header.payload_len;
+	}
+
+	if (payload == NULL)
+		goto err;
+
+	*event = malloc(sizeof(header) + payload_len);
+	if (*event == NULL) {
+		free(payload);
+		goto err;
+	}
+	(*event)->ev_type = header.ev_type;
+	(*event)->payload_len = payload_len;
+	memcpy(PAYLOAD(*event), payload, payload_len);
+	free(payload);
+
 	return 0;
 
 err:

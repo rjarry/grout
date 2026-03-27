@@ -84,7 +84,7 @@ static LIST_HEAD(, api_ctx) clients = LIST_HEAD_INITIALIZER(clients);
 // PID of the current request while API handler is called.
 static __thread pid_t cur_req_pid;
 
-// Thread-local encode buffer shared by api_send() and read_cb().
+// Thread-local encode buffer shared by api_send(), api_send_notifications(), and read_cb().
 static __thread uint8_t mpack_buf[GR_API_MAX_MSG_LEN];
 
 void api_send_notifications(uint32_t ev_type, const void *obj) {
@@ -92,9 +92,8 @@ void api_send_notifications(uint32_t ev_type, const void *obj) {
 	struct module_subscribers *subs;
 	struct subscription *s;
 	struct gr_api_event e;
-	void *data = NULL;
 	uint16_t mod, ev;
-	int len;
+	ssize_t len;
 
 	mod = (ev_type >> 16) & 0xffff;
 	ev = ev_type & 0xffff;
@@ -107,7 +106,8 @@ void api_send_notifications(uint32_t ev_type, const void *obj) {
 		return;
 	}
 
-	if ((len = gr_event_serialize(ev_type, obj, &data)) < 0) {
+	len = gr_event_serialize(ev_type, obj, mpack_buf, sizeof(mpack_buf));
+	if (len < 0) {
 		LOG(ERR, "gr_event_serialize: %s", strerror(-len));
 		return;
 	}
@@ -119,16 +119,14 @@ void api_send_notifications(uint32_t ev_type, const void *obj) {
 		if (s->suppress_self_events && s->pid == cur_req_pid)
 			continue;
 		bufferevent_write(s->bev, &e, sizeof(e));
-		bufferevent_write(s->bev, data, len);
+		bufferevent_write(s->bev, mpack_buf, len);
 	}
 	gr_vec_foreach_ref (s, ev_subs) {
 		if (s->suppress_self_events && s->pid == cur_req_pid)
 			continue;
 		bufferevent_write(s->bev, &e, sizeof(e));
-		bufferevent_write(s->bev, data, len);
+		bufferevent_write(s->bev, mpack_buf, len);
 	}
-
-	free(data);
 }
 
 static struct api_out subscribe(const void *request, struct api_ctx *ctx) {

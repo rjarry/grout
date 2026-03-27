@@ -233,4 +233,8 @@ static void __attribute__((constructor)) nexthop_codecs_init(void) {
 	gr_api_codec_register(GR_NH_ADD, &nh_add_codec);
 	gr_api_codec_register(GR_NH_LIST, &nh_list_codec);
 	gr_api_codec_register(GR_NH_GET, &nh_get_codec);
+
+	gr_event_codec_register(GR_EVENT_NEXTHOP_NEW, &nh_list_codec);
+	gr_event_codec_register(GR_EVENT_NEXTHOP_DELETE, &nh_list_codec);
+	gr_event_codec_register(GR_EVENT_NEXTHOP_UPDATE, &nh_list_codec);
 }

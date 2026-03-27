@@ -157,4 +157,17 @@ static void __attribute__((constructor)) l2_codecs_init(void) {
 	gr_api_codec_register(GR_FLOOD_ADD, &flood_add_codec);
 	gr_api_codec_register(GR_FLOOD_DEL, &flood_del_codec);
 	gr_api_codec_register(GR_FLOOD_LIST, &flood_list_codec);
+
+	// Event codecs reuse the list response codecs.
+	gr_event_serializer(GR_EVENT_FDB_ADD, fdb_entry_fields, NULL);
+	gr_event_serializer(GR_EVENT_FDB_DEL, fdb_entry_fields, NULL);
+	gr_event_serializer(GR_EVENT_FDB_UPDATE, fdb_entry_fields, NULL);
+	gr_event_codec_register(GR_EVENT_FDB_ADD, &fdb_list_codec);
+	gr_event_codec_register(GR_EVENT_FDB_DEL, &fdb_list_codec);
+	gr_event_codec_register(GR_EVENT_FDB_UPDATE, &fdb_list_codec);
+
+	gr_event_serializer(GR_EVENT_FLOOD_ADD, flood_entry_fields, NULL);
+	gr_event_serializer(GR_EVENT_FLOOD_DEL, flood_entry_fields, NULL);
+	gr_event_codec_register(GR_EVENT_FLOOD_ADD, &flood_list_codec);
+	gr_event_codec_register(GR_EVENT_FLOOD_DEL, &flood_list_codec);
 }
