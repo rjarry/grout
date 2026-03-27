@@ -3,3 +3,4 @@
 
 api_headers += files('gr_dhcp.h')
 api_inc += include_directories('.')
+lib_src += files('dhcp_codec.c')
