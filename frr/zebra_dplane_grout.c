@@ -7,10 +7,11 @@
 #include "log_grout.h"
 #include "rt_grout.h"
 
-#include <gr_api_client_impl.h>
+#include <gr_api.h>
 #include <gr_errno.h>
 #include <gr_l2.h>
 #include <gr_srv6.h>
+#include <gr_version.h>
 
 #include <lib/bitfield.h>
 #include <lib/frr_pthread.h>
@@ -370,7 +371,7 @@ static void dplane_grout_connect(struct event *) {
 		dg_master,
 		dplane_read_notifications,
 		NULL,
-		grout_ctx.dplane_notifs->sock_fd,
+		gr_api_client_get_fd(grout_ctx.dplane_notifs),
 		&grout_ctx.dg_t_dplane_update
 	);
 
@@ -399,7 +400,7 @@ static void zebra_grout_connect(struct event *) {
 		zrouter.master,
 		zebra_read_notifications,
 		NULL,
-		grout_ctx.zebra_notifs->sock_fd,
+		gr_api_client_get_fd(grout_ctx.zebra_notifs),
 		&grout_ctx.dg_t_zebra_update
 	);
 
@@ -602,7 +603,7 @@ static void dplane_read_notifications(struct event *event) {
 		dg_master,
 		dplane_read_notifications,
 		NULL,
-		grout_ctx.dplane_notifs->sock_fd,
+		gr_api_client_get_fd(grout_ctx.dplane_notifs),
 		&grout_ctx.dg_t_dplane_update
 	);
 }
@@ -650,7 +651,7 @@ static void zebra_read_notifications(struct event *event) {
 		zrouter.master,
 		zebra_read_notifications,
 		NULL,
-		grout_ctx.zebra_notifs->sock_fd,
+		gr_api_client_get_fd(grout_ctx.zebra_notifs),
 		&grout_ctx.dg_t_zebra_update
 	);
 }

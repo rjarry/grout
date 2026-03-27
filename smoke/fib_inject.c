@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Robin Jarry
 
 #include <gr_api.h>
-#include <gr_api_client_impl.h>
 #include <gr_infra.h>
 #include <gr_ip4.h>
 #include <gr_ip6.h>

@@ -108,6 +108,7 @@ inc = []
 
 api_inc = []
 api_headers = []
+lib_src = []
 
 cli_src = []
 cli_inc = []
@@ -121,10 +122,20 @@ subdir('modules')
 subdir('cli')
 subdir('frr')
 
+libgrout = shared_library(
+  'grout', lib_src,
+  include_directories: api_inc,
+  install: true,
+)
+libgrout_dep = declare_dependency(
+  link_with: libgrout,
+  include_directories: api_inc,
+)
+
 grout_exe = executable(
   'grout', src,
   include_directories: inc + api_inc,
-  dependencies: [dpdk_dep, ev_core_dep, ev_extra_dep, ev_thread_dep, mnl_dep, numa_dep],
+  dependencies: [dpdk_dep, ev_core_dep, ev_extra_dep, ev_thread_dep, mnl_dep, numa_dep, libgrout_dep],
   c_args: ['-D__GROUT_MAIN__'] + grout_cflags,
   install: true,
 )
@@ -132,7 +143,7 @@ grout_exe = executable(
 grcli_exe = executable(
   'grcli', cli_src,
   include_directories: cli_inc + api_inc,
-  dependencies: [ecoli_dep],
+  dependencies: [ecoli_dep, libgrout_dep],
   c_args: cli_cflags + grout_cflags,
   install: true,
 )
@@ -140,6 +151,7 @@ grcli_exe = executable(
 executable(
   'fib_inject', files('smoke/fib_inject.c'),
   include_directories: api_inc,
+  dependencies: [libgrout_dep],
   install: false,
 )
 
@@ -149,8 +161,9 @@ subdir('docs')
 install_headers(api_headers, subdir: 'grout')
 pkg = import('pkgconfig')
 pkg.generate(
+  libgrout,
   name: 'grout',
-  description: 'grout API headers',
+  description: 'grout API client library',
   subdirs: ['grout'],
   install_dir: get_option('datadir') / 'pkgconfig',
 )

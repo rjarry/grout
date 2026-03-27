@@ -202,6 +202,10 @@ struct gr_api_event {
 	size_t payload_len;
 };
 
+// Get the underlying socket file descriptor.
+// Useful for integrating with external event loops.
+int gr_api_client_get_fd(const struct gr_api_client *);
+
 // Receive an event notification.
 // Caller must free(*event) after use.
 // Returns 0 on success, negative errno on failure.

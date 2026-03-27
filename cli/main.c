@@ -9,7 +9,6 @@
 #include "tty.h"
 
 #include <gr_api.h>
-#include <gr_api_client_impl.h>
 #include <gr_cli.h>
 #include <gr_clock.h>
 #include <gr_display.h>
@@ -22,6 +21,7 @@
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/queue.h>
 #include <unistd.h>
 

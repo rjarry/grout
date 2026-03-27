@@ -26,7 +26,7 @@ frr_plugin = shared_module(
     'zebra_dplane_grout.c',
   ),
   name_prefix: '',
-  dependencies: [frr_dep],
+  dependencies: [frr_dep, libgrout_dep],
   include_directories: api_inc + include_directories('.'),
   install: not install_build_flag,
   install_dir: frr_dep.get_variable('moduledir'),

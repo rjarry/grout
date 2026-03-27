@@ -3,7 +3,6 @@
 
 api_headers += files(
   'gr_api.h',
-  'gr_api_client_impl.h',
   'gr_bitops.h',
   'gr_clock.h',
   'gr_errno.h',
@@ -18,12 +17,11 @@ api_headers += configure_file(
   }),
 )
 
-api_src = files(
+lib_src += files(
+  'client.c',
   'printf.c',
   'string.c',
 )
-src += api_src
-cli_src += api_src
 
 api_inc += include_directories('.')
 

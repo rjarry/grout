@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024 Robin Jarry
 
-// This file must be included in *one* of your client application files.
-
-#pragma once
-
 #include <gr_api.h>
 #include <gr_errno.h>
 #include <gr_macro.h>
@@ -12,9 +8,7 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <getopt.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
@@ -217,6 +211,12 @@ out:
 err:
 	free(payload);
 	return -errno;
+}
+
+int gr_api_client_get_fd(const struct gr_api_client *client) {
+	if (client == NULL)
+		return -1;
+	return client->sock_fd;
 }
 
 int gr_api_client_event_recv(const struct gr_api_client *c, struct gr_api_event **event) {
