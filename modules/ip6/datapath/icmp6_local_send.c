@@ -88,14 +88,14 @@ static uint16_t icmp6_local_send_process(
 	struct ctl_to_stack *msg;
 	struct rte_mbuf *mbuf;
 	struct icmp6 *icmp6;
-	clock_t *payload;
+	gr_clock_t *payload;
 	rte_edge_t next;
 	size_t pkt_len;
 
 	for (unsigned i = 0; i < n_objs; i++) {
 		mbuf = objs[i];
 		msg = control_input_mbuf_data(mbuf)->data;
-		pkt_len = sizeof(*icmp6) + sizeof(*icmp6_echo) + sizeof(clock_t);
+		pkt_len = sizeof(*icmp6) + sizeof(*icmp6_echo) + sizeof(gr_clock_t);
 		icmp6 = (struct icmp6 *)rte_pktmbuf_append(mbuf, pkt_len);
 
 		icmp6->type = ICMP6_TYPE_ECHO_REQUEST;

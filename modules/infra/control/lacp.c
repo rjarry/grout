@@ -127,7 +127,7 @@ static void lacp_periodic(evutil_socket_t, short, void *) {
 	struct iface_info_bond *bond;
 	struct bond_member *member;
 	const struct iface *port;
-	clock_t now, timeout;
+	gr_clock_t now, timeout;
 	struct iface *iface;
 
 	now = gr_clock_us();

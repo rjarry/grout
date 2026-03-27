@@ -19,7 +19,7 @@
 
 struct icmp_queue_item {
 	struct rte_mbuf *mbuf;
-	clock_t timestamp;
+	gr_clock_t timestamp;
 	STAILQ_ENTRY(icmp_queue_item) next;
 };
 
@@ -50,7 +50,7 @@ static void icmp_input_cb(void *m, uintptr_t timestamp, const struct control_que
 
 // Search for the oldest ICMP response matching the given identifier.
 // If found, the packet is removed from the queue.
-static struct rte_mbuf *get_icmp_response(uint16_t ident, uint16_t seq_num, clock_t *timestamp) {
+static struct rte_mbuf *get_icmp_response(uint16_t ident, uint16_t seq_num, gr_clock_t *timestamp) {
 	struct icmp_queue_item *i, *tmp;
 	struct rte_mbuf *mbuf = NULL;
 
@@ -109,7 +109,7 @@ out:
 static struct api_out icmp_recv(const void *request, struct api_ctx *) {
 	const struct gr_ip4_icmp_recv_req *icmp_req = request;
 	struct gr_ip4_icmp_recv_resp *resp = NULL;
-	clock_t *pkt_timestamp, rcv_timestamp;
+	gr_clock_t *pkt_timestamp, rcv_timestamp;
 	struct rte_icmp_hdr *icmp;
 	struct rte_ipv4_hdr *ip;
 	struct rte_mbuf *m;

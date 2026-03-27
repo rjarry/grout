@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
 	unsigned dist_count;
 	bool ipv6 = false;
 	float duration;
-	clock_t time;
+	gr_clock_t time;
 	int ret;
 	int o;
 

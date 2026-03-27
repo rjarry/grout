@@ -337,7 +337,7 @@ static void fdb_ageing_cb(evutil_socket_t, short /*what*/, void * /*priv*/) {
 	uint32_t next = 0;
 	uint16_t max_age;
 	const void *key;
-	clock_t now;
+	gr_clock_t now;
 	void *data;
 	time_t age;
 

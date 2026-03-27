@@ -15,7 +15,7 @@
 
 static cmd_status_t conn_list(struct gr_api_client *c, const struct ec_pnode *) {
 	const struct gr_conntrack *conn;
-	clock_t now;
+	gr_clock_t now;
 	int ret;
 
 	struct gr_table *table = gr_table_new();

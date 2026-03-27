@@ -213,7 +213,7 @@ struct gr_ip6_icmp_recv_resp {
 	uint16_t ident;
 	uint16_t seq_num;
 	struct rte_ipv6_addr src_addr;
-	clock_t response_time;
+	gr_clock_t response_time;
 };
 
 typedef enum {

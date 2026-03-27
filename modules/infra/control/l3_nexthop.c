@@ -294,7 +294,7 @@ static struct nexthop_type_ops l3_nh_ops = {
 
 static void l3_age(struct nexthop *nh, struct nexthop_info_l3 *l3) {
 	const struct nexthop_af_ops *ops;
-	clock_t now = gr_clock_us();
+	gr_clock_t now = gr_clock_us();
 	unsigned probes, max_probes;
 	time_t reply_age;
 

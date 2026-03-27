@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <time.h>
 
+// Stable fixed-width type for timestamps (microseconds since boot).
+typedef uint64_t gr_clock_t;
+
 // Get the elapsed time since last boot (using a common clock across all processes).
 static inline struct timespec gr_clock_raw(void) {
 	struct timespec tp = {0};
@@ -14,7 +17,7 @@ static inline struct timespec gr_clock_raw(void) {
 }
 
 // Get elapsed time since last boot in microseconds.
-static inline clock_t gr_clock_us(void) {
+static inline gr_clock_t gr_clock_us(void) {
 	struct timespec tp = gr_clock_raw();
 	return (tp.tv_sec * CLOCKS_PER_SEC) + (tp.tv_nsec / 1000);
 }
