@@ -37,7 +37,7 @@ struct gr_ip6_route_add_req {
 	struct rte_ipv6_addr nh;
 	uint32_t nh_id;
 	gr_nh_origin_t origin;
-	uint8_t exist_ok;
+	bool exist_ok;
 };
 
 // struct gr_ip6_route_add_resp { };
@@ -48,7 +48,7 @@ struct gr_ip6_route_add_req {
 struct gr_ip6_route_del_req {
 	uint16_t vrf_id;
 	struct ip6_net dest;
-	uint8_t missing_ok;
+	bool missing_ok;
 };
 
 // struct gr_ip6_route_del_resp { };
@@ -82,7 +82,7 @@ STREAM_RESP(struct gr_ip6_route);
 
 struct gr_ip6_addr_add_req {
 	struct gr_ip6_ifaddr addr;
-	uint8_t exist_ok;
+	bool exist_ok;
 };
 
 // struct gr_ip6_addr_add_resp { };
@@ -92,7 +92,7 @@ struct gr_ip6_addr_add_req {
 
 struct gr_ip6_addr_del_req {
 	struct gr_ip6_ifaddr addr;
-	uint8_t missing_ok;
+	bool missing_ok;
 };
 
 // struct gr_ip6_addr_del_resp { };
@@ -149,11 +149,14 @@ STREAM_RESP(struct gr_fib6_info);
 
 // Configure IPv6 router advertisement on an interface.
 #define GR_IP6_IFACE_RA_SET REQUEST_TYPE(GR_IP6_MODULE, 0x0030)
+typedef enum : uint8_t {
+	GR_IP6_RA_SET_INTERVAL = GR_BIT8(0),
+	GR_IP6_RA_SET_LIFETIME = GR_BIT8(1),
+} gr_ip6_ra_set_attrs_t;
+
 struct gr_ip6_ra_set_req {
 	uint16_t iface_id;
-	uint16_t set_interval : 1;
-	uint16_t set_lifetime : 1;
-
+	gr_ip6_ra_set_attrs_t set_attrs;
 	uint16_t interval; // default 600
 	uint16_t lifetime; // default 1800
 };

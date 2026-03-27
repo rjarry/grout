@@ -47,9 +47,9 @@ static struct api_out iface_ra_set(const void *request, struct api_ctx *) {
 	if (iface_from_id(req->iface_id) == NULL)
 		return api_out(errno, 0, NULL);
 
-	if (req->set_interval)
+	if (req->set_attrs & GR_IP6_RA_SET_INTERVAL)
 		ra_conf[req->iface_id].interval = req->interval;
-	if (req->set_lifetime)
+	if (req->set_attrs & GR_IP6_RA_SET_LIFETIME)
 		ra_conf[req->iface_id].lifetime = req->lifetime;
 
 	event_add(

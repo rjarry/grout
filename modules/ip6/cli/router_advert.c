@@ -44,9 +44,9 @@ static cmd_status_t ra_set(struct gr_api_client *c, const struct ec_pnode *p) {
 	if (arg_iface(c, p, "IFACE", GR_IFACE_TYPE_UNDEF, &req.iface_id) < 0)
 		return CMD_ERROR;
 	if (!arg_u16(p, "IT", &req.interval))
-		req.set_interval = 1;
+		req.set_attrs |= GR_IP6_RA_SET_INTERVAL;
 	if (!arg_u16(p, "LT", &req.lifetime))
-		req.set_lifetime = 1;
+		req.set_attrs |= GR_IP6_RA_SET_LIFETIME;
 
 	if (gr_api_client_send_recv(c, GR_IP6_IFACE_RA_SET, sizeof(req), &req, NULL) < 0)
 		return CMD_ERROR;
