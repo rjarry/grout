@@ -11,4 +11,7 @@ api_headers += files(
   'gr_nat.h',
 )
 api_inc += include_directories('.')
-lib_src += files('conntrack_codec.c')
+lib_src += files(
+  'conntrack_codec.c',
+  'nat_codec.c',
+)
