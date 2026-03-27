@@ -19,6 +19,7 @@ api_headers += configure_file(
 
 lib_src += files(
   'client.c',
+  'codec.c',
   'printf.c',
   'string.c',
 )
@@ -32,6 +33,10 @@ tests += [
   },
   {
     'sources': files('string_test.c', 'string.c'),
+    'link_args': [],
+  },
+  {
+    'sources': files('codec_test.c', 'codec.c'),
     'link_args': [],
   },
 ]

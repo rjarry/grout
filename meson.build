@@ -180,7 +180,7 @@ if cmocka_dep.found()
       'include_directories': inc + api_inc,
       'c_args': ['-D__GROUT_MAIN__', '-D__GROUT_UNIT_TEST__'],
       'link_args': t['link_args'],
-      'dependencies': [dpdk_dep, ev_core_dep, ev_thread_dep, numa_dep, ecoli_dep, cmocka_dep],
+      'dependencies': [dpdk_dep, ev_core_dep, ev_thread_dep, numa_dep, ecoli_dep, cmocka_dep, mpack_dep],
     }
     test(name, executable(name, kwargs: t), suite: 'unit')
   endforeach
