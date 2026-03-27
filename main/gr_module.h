@@ -4,6 +4,7 @@
 #pragma once
 
 #include <gr_api.h>
+#include <gr_codec.h>
 
 #include <event2/bufferevent.h>
 #include <event2/event.h>

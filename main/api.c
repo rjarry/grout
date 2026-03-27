@@ -84,6 +84,9 @@ static LIST_HEAD(, api_ctx) clients = LIST_HEAD_INITIALIZER(clients);
 // PID of the current request while API handler is called.
 static __thread pid_t cur_req_pid;
 
+// Thread-local encode buffer shared by api_send() and read_cb().
+static __thread uint8_t mpack_buf[GR_API_MAX_MSG_LEN];
+
 void api_send_notifications(uint32_t ev_type, const void *obj) {
 	struct subscription *ev_subs = NULL;
 	struct module_subscribers *subs;
@@ -213,12 +216,40 @@ static void disconnect_client(struct api_ctx *ctx) {
 	free(ctx);
 }
 
+// Encode payload using the codec. Returns encoded data pointer and updates *len.
+// If no encoding is needed, returns payload unchanged.
+static const void *
+codec_encode(const struct gr_api_codec *codec, const void *payload, size_t *len) {
+	ssize_t ret;
+
+	if (codec == NULL || payload == NULL || *len == 0)
+		return payload;
+
+	if (codec->encode_resp)
+		ret = codec->encode_resp(mpack_buf, sizeof(mpack_buf), payload, *len);
+	else if (codec->resp_fields != NULL)
+		ret = gr_mpack_encode(mpack_buf, sizeof(mpack_buf), codec->resp_fields, payload);
+	else
+		return payload;
+
+	if (ret <= 0)
+		return payload;
+
+	*len = ret;
+	return mpack_buf;
+}
+
 void api_send(struct api_ctx *ctx, uint32_t len, const void *payload) {
 	assert(ctx != NULL);
 	assert(len != 0);
 	assert(payload != NULL);
 
 	LOG(DEBUG, "pid=%d for_id=%u len=%u", ctx->pid, ctx->header.id, len);
+
+	const struct gr_api_codec *codec = gr_api_codec_lookup(ctx->header.type);
+	size_t encoded_len = len;
+	const void *data = codec_encode(codec, payload, &encoded_len);
+	len = encoded_len;
 
 	struct gr_api_response resp = {
 		.api_version = GR_API_VERSION,
@@ -229,7 +260,7 @@ void api_send(struct api_ctx *ctx, uint32_t len, const void *payload) {
 	};
 	if (bufferevent_write(ctx->bev, &resp, sizeof(resp)) < 0)
 		LOG(ERR, "pid=%d cannot write header", ctx->pid);
-	if (bufferevent_write(ctx->bev, payload, len) < 0)
+	if (bufferevent_write(ctx->bev, data, len) < 0)
 		LOG(ERR, "pid=%d cannot write payload", ctx->pid);
 }
 
@@ -298,6 +329,7 @@ static void read_cb(struct bufferevent *bev, void *priv) {
 
 	// We have a complete request, process it
 	const struct api_handler *handler = lookup_api_handler(ctx->header.type);
+	const struct gr_api_codec *codec = gr_api_codec_lookup(ctx->header.type);
 	if (handler == NULL) {
 		out.status = ENOTSUP;
 		out.len = 0;
@@ -305,9 +337,32 @@ static void read_cb(struct bufferevent *bev, void *priv) {
 		goto send;
 	}
 
+	// Decode request payload if a codec is registered.
+	void *decoded_req = NULL;
+	if (codec != NULL && req_payload != NULL) {
+		if (codec->decode_req) {
+			decoded_req = codec->decode_req(req_payload, ctx->header.payload_len);
+		} else if (codec->req_fields != NULL && codec->req_size > 0) {
+			decoded_req = gr_mpack_decode(
+				req_payload,
+				ctx->header.payload_len,
+				codec->req_fields,
+				codec->req_size,
+				NULL
+			);
+		}
+		if (decoded_req == NULL) {
+			out.status = errno ? errno : EINVAL;
+			out.len = 0;
+			out.payload = NULL;
+			goto send;
+		}
+	}
+
 	cur_req_pid = ctx->pid;
-	out = handler->callback(req_payload, ctx);
+	out = handler->callback(decoded_req ? decoded_req : req_payload, ctx);
 	cur_req_pid = 0;
+	free(decoded_req);
 
 send:
 	LOG(DEBUG,
@@ -321,22 +376,23 @@ send:
 	    strerror(out.status),
 	    out.len);
 
+	size_t resp_len = out.len;
+	const void *resp_data = codec_encode(codec, out.payload, &resp_len);
+
 	struct gr_api_response resp = {
 		.api_version = GR_API_VERSION,
 		.for_id = ctx->header.id,
 		.type = ctx->header.type,
 		.status = out.status,
-		.payload_len = out.len,
+		.payload_len = resp_len,
 	};
 
 	if (bufferevent_write(bev, &resp, sizeof(resp)) < 0)
 		LOG(ERR, "failed to write header");
-	if (out.len > 0) {
-		assert(out.payload != NULL);
-		if (bufferevent_write(bev, out.payload, out.len) < 0)
+	if (resp_len > 0 && resp_data != NULL) {
+		if (bufferevent_write(bev, resp_data, resp_len) < 0)
 			LOG(ERR, "failed to write payload");
 	}
-
 	bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
 
 	free(req_payload);

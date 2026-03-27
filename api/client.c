@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Robin Jarry
 
 #include <gr_api.h>
+#include <gr_codec.h>
 #include <gr_errno.h>
 #include <gr_macro.h>
 
@@ -122,10 +123,31 @@ long int gr_api_client_send(
 	size_t tx_len,
 	const void *tx_data
 ) {
+	const struct gr_api_codec *codec = gr_api_codec_lookup(req_type);
+	static __thread uint8_t mpack_buf[GR_API_MAX_MSG_LEN];
 	static uint32_t message_id;
 
 	if (client == NULL || (tx_len == 0 && tx_data != NULL) || (tx_len > 0 && tx_data == NULL))
 		return errno_set(EINVAL);
+
+	if (codec != NULL && tx_data != NULL && tx_len > 0) {
+		ssize_t ret;
+		if (codec->encode_req != NULL)
+			ret = codec->encode_req(mpack_buf, sizeof(mpack_buf), tx_data, tx_len);
+		else if (codec->req_fields != NULL)
+			ret = gr_mpack_encode(
+				mpack_buf, sizeof(mpack_buf), codec->req_fields, tx_data
+			);
+		else
+			ret = 0;
+
+		if (ret < 0)
+			return ret;
+		if (ret > 0) {
+			tx_data = mpack_buf;
+			tx_len = ret;
+		}
+	}
 
 	struct gr_api_request req = {
 		.api_version = GR_API_VERSION,
@@ -175,11 +197,35 @@ recv:
 		goto err;
 	}
 	if (resp.payload_len > 0) {
-		// receive payload *before* checking response status to drain socket buffer
-		if ((payload = malloc(resp.payload_len)) == NULL)
+		// receive raw bytes *before* checking response status to drain socket buffer
+		void *raw = malloc(resp.payload_len);
+		if (raw == NULL)
 			goto err;
-		if (recv_all(client, payload, resp.payload_len) != resp.payload_len)
+		if (recv_all(client, raw, resp.payload_len) != resp.payload_len) {
+			free(raw);
 			goto err;
+		}
+		// Decode via codec if registered.
+		const struct gr_api_codec *codec = gr_api_codec_lookup(resp.type);
+		if (codec != NULL) {
+			if (codec->decode_resp) {
+				payload = codec->decode_resp(raw, resp.payload_len);
+			} else if (codec->resp_fields != NULL && codec->resp_size > 0) {
+				payload = gr_mpack_decode(
+					raw,
+					resp.payload_len,
+					codec->resp_fields,
+					codec->resp_size,
+					NULL
+				);
+			}
+			free(raw);
+			if (payload == NULL)
+				goto err;
+		} else {
+			// No codec: pass raw bytes through (legacy path).
+			payload = raw;
+		}
 	}
 	if (resp.for_id != for_id) {
 		// Not the message ID we expected. Enqueue it to the cached messages.
