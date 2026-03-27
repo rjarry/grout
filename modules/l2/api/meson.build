@@ -2,5 +2,5 @@
 # Copyright (c) 2026 Robin Jarry
 
 api_headers += files('gr_l2.h')
-
 api_inc += include_directories('.')
+lib_src += files('l2_codec.c')
