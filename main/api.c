@@ -330,16 +330,16 @@ static void read_cb(struct bufferevent *bev, void *priv) {
 	// We have a complete request, process it
 	const struct api_handler *handler = lookup_api_handler(ctx->header.type);
 	const struct gr_api_codec *codec = gr_api_codec_lookup(ctx->header.type);
-	if (handler == NULL) {
+	if (handler == NULL || codec == NULL) {
 		out.status = ENOTSUP;
 		out.len = 0;
 		out.payload = NULL;
 		goto send;
 	}
 
-	// Decode request payload if a codec is registered.
+	// Decode request payload via codec.
 	void *decoded_req = NULL;
-	if (codec != NULL && req_payload != NULL) {
+	if (req_payload != NULL) {
 		if (codec->decode_req) {
 			decoded_req = codec->decode_req(req_payload, ctx->header.payload_len);
 		} else if (codec->req_fields != NULL && codec->req_size > 0) {

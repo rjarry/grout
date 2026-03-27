@@ -129,8 +129,10 @@ long int gr_api_client_send(
 
 	if (client == NULL || (tx_len == 0 && tx_data != NULL) || (tx_len > 0 && tx_data == NULL))
 		return errno_set(EINVAL);
+	if (codec == NULL)
+		return errno_set(ENOTSUP);
 
-	if (codec != NULL && tx_data != NULL && tx_len > 0) {
+	if (tx_data != NULL && tx_len > 0) {
 		ssize_t ret;
 		if (codec->encode_req != NULL)
 			ret = codec->encode_req(mpack_buf, sizeof(mpack_buf), tx_data, tx_len);
@@ -139,7 +141,7 @@ long int gr_api_client_send(
 				mpack_buf, sizeof(mpack_buf), codec->req_fields, tx_data
 			);
 		else
-			ret = 0;
+			ret = 0; // codec registered but no encode function, raw passthrough
 
 		if (ret < 0)
 			return ret;
@@ -205,27 +207,27 @@ recv:
 			free(raw);
 			goto err;
 		}
-		// Decode via codec if registered.
+		// Decode via codec.
 		const struct gr_api_codec *codec = gr_api_codec_lookup(resp.type);
-		if (codec != NULL) {
-			if (codec->decode_resp) {
-				payload = codec->decode_resp(raw, resp.payload_len);
-			} else if (codec->resp_fields != NULL && codec->resp_size > 0) {
-				payload = gr_mpack_decode(
-					raw,
-					resp.payload_len,
-					codec->resp_fields,
-					codec->resp_size,
-					NULL
-				);
-			}
+		if (codec == NULL) {
 			free(raw);
-			if (payload == NULL)
-				goto err;
+			errno = ENOTSUP;
+			goto err;
+		}
+		if (codec->decode_resp) {
+			payload = codec->decode_resp(raw, resp.payload_len);
+			free(raw);
+		} else if (codec->resp_fields != NULL && codec->resp_size > 0) {
+			payload = gr_mpack_decode(
+				raw, resp.payload_len, codec->resp_fields, codec->resp_size, NULL
+			);
+			free(raw);
 		} else {
-			// No codec: pass raw bytes through (legacy path).
+			// Codec registered but no resp encoding: raw passthrough.
 			payload = raw;
 		}
+		if (payload == NULL)
+			goto err;
 	}
 	if (resp.for_id != for_id) {
 		// Not the message ID we expected. Enqueue it to the cached messages.
