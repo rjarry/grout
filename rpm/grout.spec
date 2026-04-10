@@ -1,11 +1,21 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024 Robin Jarry
 
+%if 0%{?rhel}
+%bcond_with docs
+%bcond_with tests
+%else
 %bcond_without docs
 %bcond_without tests
+%endif
 %bcond_without systemd
 %bcond_without frr
 %bcond_with download
+
+%{?!grout_version: %define grout_version 0.15.0}
+%{?!grout_release: %define grout_release 1%{?dist}.local}
+%{?!dpdk_version: %define dpdk_version 25.11}
+%{?!ecoli_version: %define ecoli_version 0.10.1}
 
 %define dpdk_cpu generic
 %ifarch x86_64
@@ -29,9 +39,11 @@ Summary: Graph router based on DPDK
 Group: System Environment/Daemons
 URL: https://github.com/DPDK/grout
 License: BSD-3-Clause AND GPL-2.0-or-later
-Version: %{version}
-Release: %{release}
-Source0: https://github.com/DPDK/grout/archive/%{branch}.tar.gz#/%{name}-%{version}-%{release}.tar.gz
+Version: %{grout_version}
+Release: %{grout_release}
+Source0: %{name}-%{version}.tar.gz
+Source1: dpdk-%{dpdk_version}.tar.xz
+Source2: libecoli-%{ecoli_version}.tar.gz
 
 BuildRequires: gcc
 %if %{with download}
@@ -61,6 +73,8 @@ BuildRequires: systemd
 %endif
 
 Requires: less
+Provides: bundled(dpdk) = %{dpdk_version}
+Provides: bundled(libecoli) = %{ecoli_version}
 
 %description
 grout stands for Graph Router. In English, "grout" refers to thin mortar that
@@ -77,7 +91,7 @@ It comes with a client library to configure it over a standard UNIX socket and
 a CLI that uses that library. The CLI can be used as an interactive shell, but
 also in scripts one command at a time, or by batches.
 
-%if %{undefined fedora}
+%if %{undefined fedora} && 0%{?_build_in_place}
 %debug_package
 %endif
 
@@ -97,6 +111,10 @@ Requires: frr = %(rpm -q --qf '%%{version}-%%{release}' frr-headers)
 %description frr
 FRR dplane plugin for grout
 %endif
+
+%prep
+%autosetup -n %{name}-%{version}
+install -Dt subprojects/packagecache %{SOURCE1} %{SOURCE2}
 
 %build
 %meson \
@@ -123,6 +141,9 @@ FRR dplane plugin for grout
 %meson_install --skip-subprojects
 %if %{without systemd}
 rm -rf %{buildroot}%{_sysconfdir} %{buildroot}%{_unitdir}
+%endif
+%if %{without frr}
+rm -f %{buildroot}%{_mandir}/man7/grout-frr.7*
 %endif
 
 %if %{with systemd}

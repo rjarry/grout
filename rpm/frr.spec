@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 Robin Jarry
 
+%{?!frr_version: %define frr_version 10.5.3}
+%{?!frr_release: %define frr_release 1%{?dist}.grout}
+
 %global frr_libdir %{_libexecdir}/frr
 
 %global _hardened_build 1
@@ -8,8 +11,8 @@
 %define _legacy_common_support 1
 
 Name: frr
-Version: %{version}
-Release: 1%{?dist}.grout
+Version: %{frr_version}
+Release: %{frr_release}
 Summary: Routing daemon
 License: GPL-2.0-or-later AND ISC AND LGPL-2.0-or-later AND BSD-2-Clause AND BSD-3-Clause AND (GPL-2.0-or-later  OR ISC) AND MIT
 URL: http://www.frrouting.org
@@ -26,9 +29,11 @@ BuildRequires: libcap-devel
 BuildRequires: libtool
 BuildRequires: libxcrypt-devel
 BuildRequires: libyang-devel >= 2.1.128
+BuildRequires: elfutils-libelf-devel
 BuildRequires: make
 BuildRequires: ncurses
 BuildRequires: ncurses-devel
+BuildRequires: openssl-devel
 BuildRequires: pam-devel
 BuildRequires: patch
 BuildRequires: pcre2-devel

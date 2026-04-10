@@ -109,13 +109,13 @@ deb:
 
 rpmversion = $(firstword $(version))
 rpmdist = $(shell rpm --eval %{dist} 2>/dev/null)
-rpmrelease = $(subst -,.,$(lastword $(version)))$(rpmdist)
+rpmrelease = $(subst -g,$(rpmdist).,$(lastword $(version)))
 rpmbuild_opts = $(addprefix --with=,$(WITH)) $(addprefix --without=,$(WITHOUT))
 
 .PHONY: rpm
 rpm:
 	GROUT_VERSION="$(rpmversion)-$(rpmrelease)" rpmbuild -bb --build-in-place $(rpmbuild_opts) \
-		-D 'version $(rpmversion)' -D 'release $(rpmrelease)' rpm/grout.spec
+		-D 'grout_version $(rpmversion)' -D 'grout_release $(rpmrelease)' rpm/grout.spec
 	$Q arch=`rpm --eval '%{_arch}'` && \
 	version="$(rpmversion)-$(rpmrelease)" && \
 	mv -vf ~/rpmbuild/RPMS/noarch/grout-headers-$$version.noarch.rpm grout-headers.noarch.rpm && \
@@ -135,7 +135,7 @@ frr-rpm:
 	meson subprojects download frr
 	echo '$(frr_hash)  $(frr_archive)' | sha256sum -c
 	install -Dt ~/rpmbuild/SOURCES $(frr_archive)
-	rpmbuild -bb -D'version $(frr_version)' -D 'release 1$(rpmdist).grout' rpm/frr.spec
+	rpmbuild -bb -D'frr_version $(frr_version)' -D 'frr_release 1$(rpmdist).grout' rpm/frr.spec
 	$Q arch=`rpm --eval '%{_arch}'` && \
 	version="$(frr_version)-1$(rpmdist).grout" && \
 	mv -vf ~/rpmbuild/RPMS/noarch/frr-headers-$$version.noarch.rpm frr-headers.noarch.rpm && \
