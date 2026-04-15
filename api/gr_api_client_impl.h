@@ -168,8 +168,6 @@ static ssize_t send_all(const struct gr_api_client *c, const void *buf, size_t l
 	while (remaining > 0) {
 		n = send(c->sock_fd, ptr, remaining, MSG_NOSIGNAL);
 		if (n < 0) {
-			if (errno == EINTR || errno == EAGAIN)
-				continue;
 			return n;
 		}
 
@@ -186,13 +184,11 @@ static ssize_t recv_all(const struct gr_api_client *c, void *buf, size_t len) {
 	ssize_t n;
 
 	while (remaining > 0) {
-		n = recv(c->sock_fd, ptr, remaining, MSG_WAITALL);
+		n = recv(c->sock_fd, ptr, remaining, 0);
 		if (n == 0) {
 			errno = ECONNRESET;
 			return len - remaining;
 		} else if (n < 0) {
-			if (errno == EINTR || errno == EAGAIN)
-				continue;
 			return n;
 		}
 
