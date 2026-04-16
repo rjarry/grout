@@ -28,7 +28,7 @@ static const struct cli_event_printer *get_event_printer(uint32_t ev_type) {
 	return NULL;
 }
 
-static sig_atomic_t stop;
+static volatile sig_atomic_t stop;
 
 static void sighandler(int) {
 	stop = true;
