@@ -127,6 +127,7 @@ subdir('main')
 subdir('modules')
 subdir('cli')
 subdir('api')
+subdir('go')
 subdir('frr')
 
 fs = import('fs')
