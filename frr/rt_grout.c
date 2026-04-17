@@ -640,8 +640,12 @@ grout_add_nexthop(uint32_t nh_id, gr_nh_origin_t origin, const struct nexthop *n
 		    && nh->nh_srv6->seg6local_action != ZEBRA_SEG6_LOCAL_ACTION_UNSPEC) {
 			len += sizeof(*sr6_local);
 			type = GR_NH_T_SR6_LOCAL;
-		} else if (nh->nh_srv6 != NULL && nh->nh_srv6->seg6_segs != NULL
-			   && nh->nh_srv6->seg6_segs->num_segs > 0) {
+		} else if (
+			// clang-format off
+			nh->nh_srv6 != NULL && nh->nh_srv6->seg6_segs != NULL
+			&& nh->nh_srv6->seg6_segs->num_segs > 0
+			// clang-format on
+		) {
 			len += sizeof(*sr6)
 				+ nh->nh_srv6->seg6_segs->num_segs * sizeof(sr6->seglist[0]);
 			type = GR_NH_T_SR6_OUTPUT;
@@ -896,12 +900,13 @@ void grout_macfdb_change(const struct gr_fdb_entry *fdb, bool new) {
 	dplane_ctx_mac_set_ndm_flags(ctx, NTF_MASTER);
 	dplane_ctx_mac_set_dst_present(ctx, fdb->vtep != 0);
 #if CURRENT_FRR_VERSION >= MAKE_FRRVERSION(10, 6, 0)
-	// clang-format off
-	dplane_ctx_mac_set_vtep_ip(ctx, &(struct ipaddr) {
-		.ipa_type = IPADDR_V4,
-		.ipaddr_v4.s_addr = fdb->vtep,
-	});
-	// clang-format on
+	dplane_ctx_mac_set_vtep_ip(
+		ctx,
+		&(struct ipaddr) {
+			.ipa_type = IPADDR_V4,
+			.ipaddr_v4.s_addr = fdb->vtep,
+		}
+	);
 #else
 	dplane_ctx_mac_set_vtep_ip(ctx, &(struct in_addr) {fdb->vtep});
 #endif

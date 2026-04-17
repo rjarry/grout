@@ -336,8 +336,12 @@ static struct api_out route4_add(const void *request, struct api_ctx *) {
 		nh = nexthop_lookup_id(req->nh_id);
 		if (nh == NULL)
 			return api_out(ENOENT, 0, NULL);
-	} else if ((nh = nexthop_lookup_l3(GR_AF_IP4, req->vrf_id, GR_IFACE_ID_UNDEF, &req->nh))
-		   == NULL) {
+	} else if (
+		// clang-format off
+		(nh = nexthop_lookup_l3(GR_AF_IP4, req->vrf_id, GR_IFACE_ID_UNDEF, &req->nh))
+		== NULL
+		// clang-format on
+	) {
 		// ensure route gateway is reachable
 		if ((nh = rib4_lookup(req->vrf_id, req->nh)) == NULL)
 			return api_out(EHOSTUNREACH, 0, NULL);
