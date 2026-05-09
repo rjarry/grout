@@ -36,17 +36,21 @@ LOG_TYPE("capture");
 
 #define CAPTURE_SNAP_MAX 4096
 
-static int find_max_pagesz(const struct rte_memseg_list *msl, void *arg) {
-	size_t *max = arg;
-	if (msl->external == 0 && msl->page_sz > *max)
-		*max = msl->page_sz;
+static int find_min_pagesz(const struct rte_memseg_list *msl, void *arg) {
+	size_t *min = arg;
+	if (msl->external == 0 && msl->page_sz < *min)
+		*min = msl->page_sz;
 	return 0;
 }
 
 static size_t dpdk_hugepage_size(void) {
-	size_t max = 0;
-	rte_memseg_list_walk(find_max_pagesz, &max);
-	return max;
+	size_t min = SIZE_MAX;
+	rte_memseg_list_walk(find_min_pagesz, &min);
+	return min == SIZE_MAX ? 0 : min;
+}
+
+static size_t round_up(size_t size, size_t align) {
+	return (size + align - 1) & ~(align - 1);
 }
 
 _Atomic(struct capture_session *) iface_capture[GR_MAX_IFACES];
@@ -238,6 +242,7 @@ struct capture_session *capture_session_start(
 		unsigned huge_flag = rte_log2_u64(pg_sz) << MAP_HUGE_SHIFT;
 		memfd_flags |= MFD_HUGETLB | huge_flag;
 		s->mmap_flags = MAP_HUGETLB | huge_flag;
+		s->memfd_size = round_up(s->memfd_size, pg_sz);
 	}
 
 	s->memfd = memfd_create("grout-capture", memfd_flags);
