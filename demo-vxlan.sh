@@ -58,6 +58,12 @@ if [ "${_DEMO_INSIDE_TMUX:-}" != 1 ]; then
 fi
 
 # ---- tmux session configuration ----
+tmux set -g prefix C-b
+tmux set -g extended-keys on
+tmux set -g extended-keys-format csi-u
+tmux set -g allow-passthrough on
+tmux set -s set-clipboard on
+tmux set -g focus-events on
 tmux set -g default-terminal tmux-256color
 tmux set -g history-limit 30000
 tmux set -sg escape-time 10
@@ -96,6 +102,12 @@ tmux bind -n M-Up    select-pane -U
 tmux bind -n M-Down  select-pane -D
 tmux bind -n M-Left  select-pane -L
 tmux bind -n M-Right select-pane -R
+tmux bind -n M-f     resize-pane -Z
+# prefix pageup enter copy mode
+tmux bind -T root         S-PPage copy-mode -u
+tmux bind -T copy-mode-vi S-NPage send-keys -X page-down
+tmux bind -T copy-mode-vi S-PPage send-keys -X page-up
+tmux bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
 
 # environment variables for grcli and tcpdump
 tmux set-environment PATH "$BUILDDIR:$PATH"
