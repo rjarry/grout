@@ -307,7 +307,7 @@ struct gr_capture_start_req {
 struct gr_capture_start_resp {
 	uint16_t capture_id;
 	uint32_t memfd_size;
-	uint32_t mmap_flags; // MAP_HUGETLB | MAP_HUGE_2MB or 0
+	uint32_t mmap_flags; // MAP_HUGETLB | MAP_HUGE_<size> or 0
 	// Response carries the shared memory fd via sendmsg SCM_RIGHTS.
 };
 

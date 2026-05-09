@@ -17,8 +17,10 @@
 #ifdef RTE_LIB_BPF
 #include <rte_bpf.h>
 #endif
+#include <rte_bitops.h>
 #include <rte_cycles.h>
 #include <rte_malloc.h>
+#include <rte_memory.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +35,19 @@
 LOG_TYPE("capture");
 
 #define CAPTURE_SNAP_MAX 4096
+
+static int find_max_pagesz(const struct rte_memseg_list *msl, void *arg) {
+	size_t *max = arg;
+	if (msl->external == 0 && msl->page_sz > *max)
+		*max = msl->page_sz;
+	return 0;
+}
+
+static size_t dpdk_hugepage_size(void) {
+	size_t max = 0;
+	rte_memseg_list_walk(find_max_pagesz, &max);
+	return max;
+}
 
 _Atomic(struct capture_session *) iface_capture[GR_MAX_IFACES];
 
@@ -218,9 +233,11 @@ struct capture_session *capture_session_start(
 	s->memfd_size = gr_capture_ring_memsize(slot_count, n_ifaces);
 
 	unsigned memfd_flags = MFD_CLOEXEC;
-	if (!gr_config.test_mode) {
-		memfd_flags |= MFD_HUGETLB | MFD_HUGE_2MB;
-		s->mmap_flags = MAP_HUGETLB | MAP_HUGE_2MB;
+	size_t pg_sz = dpdk_hugepage_size();
+	if (pg_sz > 0) {
+		unsigned huge_flag = rte_log2_u64(pg_sz) << MAP_HUGE_SHIFT;
+		memfd_flags |= MFD_HUGETLB | huge_flag;
+		s->mmap_flags = MAP_HUGETLB | huge_flag;
 	}
 
 	s->memfd = memfd_create("grout-capture", memfd_flags);
@@ -234,7 +251,7 @@ struct capture_session *capture_session_start(
 	}
 
 	// Seals are not supported with MFD_HUGETLB.
-	if (gr_config.test_mode)
+	if (!(memfd_flags & MFD_HUGETLB))
 		fcntl(s->memfd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL);
 
 	s->ring = mmap(

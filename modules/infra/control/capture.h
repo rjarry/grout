@@ -25,7 +25,7 @@ struct capture_session {
 	struct gr_capture_ring *ring; // mmap'd memfd pointer
 	int memfd;
 	size_t memfd_size;
-	uint32_t mmap_flags; // MAP_HUGETLB | MAP_HUGE_2MB or 0
+	uint32_t mmap_flags; // MAP_HUGETLB | MAP_HUGE_<size> or 0
 	uint16_t capture_id;
 	uint16_t iface_id; // GR_IFACE_ID_UNDEF = all
 	gr_capture_dir_t direction;
