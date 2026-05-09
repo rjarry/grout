@@ -27,18 +27,23 @@
 set -e
 
 # ---- Configuration (adapt before running) ----
-PF=enp1s0f0np0
-VF_UPLINK_PCI=0000:01:00.1
-VF_PE_PCI=0000:01:00.2
-VF_UPLINK=enp1s0f0v0
-VF_PE=enp1s0f0v1
-VF_POD=enp1s0f0v2
-REMOTE_HOST=root@host
-REMOTE_IFACE=eth0
+PF=ens1f0np0
+VF_UPLINK_PCI=0000:18:00.2
+VF_PE_PCI=0000:18:00.3
+VF_UPLINK=ens1f0v0
+VF_PE=ens1f0v1
+VF_POD=ens1f0v2
+REMOTE_HOST=root@dell-r450-nfv2023-02.lab.eng.brq2.redhat.com
+REMOTE_IFACE=ens1f0np0
 
 TYPING_DELAY=${TYPING_DELAY:-0.03}
-CMD_PAUSE=${CMD_PAUSE:-1}
 BUILDDIR=${BUILDDIR:-$PWD/build}
+
+# ---- PS1 prompts ----
+PS1_SETUP='\[\033[1;36m\][setup ~]#\[\033[0m\] '
+PS1_GROUT='\[\033[1;31m\][grout ~]#\[\033[0m\] '
+PS1_HOST='\[\033[1;35m\][host ~]#\[\033[0m\] '
+PS1_POD='\[\033[1;32m\][pod ~]#\[\033[0m\] '
 
 # ---- Bootstrap: re-exec inside a dedicated tmux session ----
 if [ "$(id -u)" -ne 0 ]; then
@@ -48,8 +53,9 @@ fi
 
 if [ "${_DEMO_INSIDE_TMUX:-}" != 1 ]; then
 	export _DEMO_INSIDE_TMUX=1
-	export BUILDDIR
-	exec tmux -f /dev/null -L demo-vxlan new-session -s demo \
+	exec tmux -f /dev/null -L demo-vxlan new-session \
+		-n demo-vxlan \
+		-x 130 -y 35 \
 		"$0" "$@"
 fi
 
@@ -62,24 +68,19 @@ tmux set -g allow-passthrough on
 tmux set -g base-index 1
 tmux set -g renumber-windows on
 
+tmux set -g status-position top
+tmux setw -g mode-style 'fg=colour15 bg=colour32 none'
+tmux set -g message-command-style 'fg=colour16 bg=colour32 bold'
+tmux set -g message-style 'fg=colour15 bg=colour32 bold'
 tmux set -g pane-border-status top
 tmux set -g pane-border-format ' #{pane_title} '
-tmux set -g pane-border-style 'fg=colour244'
-tmux set -g pane-active-border-style 'fg=colour32 bold'
-
-tmux set -g status-position top
-tmux set -g status 2
-tmux set -g status-style 'fg=white bg=colour238'
-tmux set -g status-format[0] \
-	"#[align=left,fg=colour160,bold] DPDK Summit 2026 -- Grout: two years in"
-tmux set -g status-format[1] \
-	"#[align=left]#{status-left}#[align=right]#{status-right}"
-tmux set -g window-status-format ""
-tmux set -g window-status-current-format ""
-tmux set -g window-status-separator ""
+tmux set -g pane-border-style 'fg=colour244 bg=default none'
+tmux set -g pane-active-border-style 'fg=colour32 bg=default bold'
+tmux set -g status-style 'fg=colour244 bg=default none'
+tmux set -g status-left-length 60
+tmux set -g status-right-length 70
 tmux set -g status-left ""
-tmux set -g status-right ""
-tmux set -g status-left-length 80
+tmux set -g status-right "#[fg=colour208]DPDK Summit 2026 -- Grout: two years in#[default]"
 
 tmux setw -g mode-keys vi
 tmux setw -g allow-rename off
@@ -88,12 +89,6 @@ tmux setw -g allow-rename off
 tmux set-environment PATH "$BUILDDIR:$PATH"
 tmux set-environment LD_LIBRARY_PATH "$BUILDDIR/subprojects/libpcap"
 tmux set-environment PCAP_PLUGIN_DIR "$BUILDDIR/pcap"
-
-# ---- PS1 prompts ----
-PS1_SETUP='\[\033[1;36m\][setup ~]#\[\033[0m\] '
-PS1_GROUT='\[\033[1;31m\][grout ~]#\[\033[0m\] '
-PS1_HOST='\[\033[1;35m\][host ~]#\[\033[0m\] '
-PS1_POD='\[\033[1;32m\][pod ~]#\[\033[0m\] '
 
 # ---- Step machinery ----
 DEMO_SIGNAL="demo-$$"
@@ -118,11 +113,6 @@ tmux bind -n F5 run-shell -b \
 tmux bind -n F9 run-shell -b \
 	"tmux set -g @demo_action quit && tmux wait-for -S $DEMO_SIGNAL"
 
-step_advance() {
-	STEP=$((STEP + 1))
-	tmux set -g status-right "#[fg=white] [$STEP/$TOTAL]"
-}
-
 wait_key() {
 	tmux wait-for "$DEMO_SIGNAL"
 	local action
@@ -133,8 +123,8 @@ wait_key() {
 }
 
 comment() {
-	step_advance
-	tmux set -g status-left "#[fg=colour160,bold] >> $* #[default]"
+	STEP=$((STEP + 1))
+	tmux set -g status-left "#[fg=colour208,bold][$STEP/$TOTAL] >> $* #[default]"
 }
 
 unzoom() {
@@ -142,9 +132,6 @@ unzoom() {
 		tmux resize-pane -Z
 	fi
 }
-
-ZOOM=true
-CLEAR=true
 
 run() {
 	local pane="$1"
@@ -154,15 +141,6 @@ run() {
 	wait_key
 	[ -n "${COMMENT:-}" ] && comment "$COMMENT" && COMMENT=""
 
-	if [ "$ZOOM" = true ]; then
-		unzoom
-		tmux select-pane -t "$pane"
-		[ "$CLEAR" = true ] && tmux send-keys -t "$pane" C-l
-		tmux resize-pane -Z -t "$pane"
-	else
-		tmux select-pane -t "$pane"
-		[ "$CLEAR" = true ] && tmux send-keys -t "$pane" C-l
-	fi
 	sleep 0.5
 
 	for (( i = 0; i < ${#cmd}; i++ )); do
@@ -172,7 +150,6 @@ run() {
 
 	sleep 0.3
 	tmux send-keys -t "$pane" Enter
-	sleep "$CMD_PAUSE"
 }
 
 # run a command without waiting for F5
@@ -188,7 +165,6 @@ run_now() {
 
 	sleep 0.3
 	tmux send-keys -t "$pane" Enter
-	sleep "$CMD_PAUSE"
 }
 
 clear_pane() {
@@ -201,15 +177,8 @@ clear_pane() {
 # ======================================================================
 
 # ---- Setup window (current window) ----
-tmux rename-window setup
+tmux new-window -n setup -e "PS1=$PS1_SETUP" bash
 PANE_SETUP=$(tmux display-message -p '#{pane_id}')
-tmux send-keys -t "$PANE_SETUP" "export PS1='$PS1_SETUP'" Enter
-tmux select-pane -t "$PANE_SETUP" -T "#[fg=cyan,bold] setup #[default]"
-sleep 0.5
-clear_pane "$PANE_SETUP"
-
-tmux set -g status-left \
-	"#[fg=colour160,bold] >> Press F5 to start #[default]"
 
 # ---- Phase 1: SR-IOV and netns setup ----
 COMMENT="Allocate SR-IOV VFs"
@@ -229,9 +198,7 @@ run "$PANE_SETUP" "ip link set $VF_PE netns hbn"
 
 COMMENT="Create pod namespace and move VF"
 run "$PANE_SETUP" "ip netns add pod"
-CLEAR=false
 run "$PANE_SETUP" "ip link set $VF_POD netns pod"
-CLEAR=true
 
 # ---- Phase 2: Start grout ----
 COMMENT="Start grout"
@@ -243,9 +210,7 @@ tmux new-window -n grout -e "PS1=$PS1_GROUT" \
 PANE_GROUT_LOG=$(tmux display-message -p '#{pane_id}')
 tmux select-pane -t "$PANE_GROUT_LOG" \
 	-T "#[fg=red,bold] grout #[default]"
-sleep 0.5
-clear_pane "$PANE_GROUT_LOG"
-run_now "$PANE_GROUT_LOG" "grout"
+run "$PANE_GROUT_LOG" "grout"
 
 # Wait for presenter to confirm grout is up
 wait_key
