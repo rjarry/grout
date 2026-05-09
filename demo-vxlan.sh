@@ -124,15 +124,15 @@ DEMO_SIGNAL="demo-$$"
 
 cleanup() {
 	set +e
-
-	ip netns pids pod 2>/dev/null | xargs -r kill 2>/dev/null
+	ip netns pids pod 2>/dev/null | xargs -r kill
 	ip netns del pod 2>/dev/null
-	ip netns pids hbn 2>/dev/null | xargs -r kill 2>/dev/null
-	ip netns del hbn 2>/dev/null
-	echo 0 > "/sys/class/net/$PF/device/sriov_numvfs" 2>/dev/null
-	ssh "$REMOTE_HOST" "ip netns del host" 2>/dev/null
-	tmux kill-server 2>/dev/null
-}
+	ip netns pids hbn 2>/dev/null | xargs -r kill
+	ip netns del hbn
+	echo 0 > "/sys/class/net/$PF/device/sriov_numvfs"
+	ip link del br-hbn
+	ssh "$REMOTE_HOST" "ip netns del host"
+	tmux kill-server
+} 2>/dev/null
 trap cleanup EXIT
 
 tmux bind -n F5 run-shell -b \
@@ -176,24 +176,53 @@ tmux new-window -n setup "PS1=\"$PS1_SETUP\" bash --norc"
 PANE_SETUP=$(tmux display-message -p '#{pane_id}')
 tmux select-pane -t "$PANE_SETUP" -T setup
 
-step "Phase 1: SR-IOV and netns setup"
+step "Phase 1: VFs setup"
+
+device=$(readlink -e /sys/class/net/$PF/device)
+pci=$(basename $device)
+ip link del br-hbn 2>/dev/null || true
+devlink dev eswitch set pci/$pci mode switchdev
+echo 3 | tee /sys/class/net/$PF/device/sriov_numvfs
+
+declare -A vf_reprs
+for vf in 0 1 2; do
+	repr=$(grep -l "pf[0-9]*vf$vf" $device/net/*/phys_port_name | xargs dirname | xargs basename)
+	vf_reprs[$vf]=$repr
+done
 
 cat > /tmp/setup.sh <<EOF
 exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
 export BASH_XTRACEFD=9
 export PS4='+ '
 set -xe
-echo 3 | tee /sys/class/net/$PF/device/sriov_numvfs
-ip link set $PF vf 0 vlan 0 spoofchk off trust on
-ip link set $PF vf 1 vlan 0 spoofchk off trust on
-ip link set $PF vf 2 vlan 42
-ip link show $PF
+
+devlink dev eswitch show pci/$pci
+cat /sys/class/net/$PF/device/sriov_numvfs
+
+ip link add br-hbn type bridge vlan_filtering 1
+ip link set "${vf_reprs[0]}" master br-hbn
+ip link set "${vf_reprs[1]}" master br-hbn
+ip link set "${vf_reprs[2]}" master br-hbn
+ip link set "$PF" master br-hbn
+ip link set "${vf_reprs[0]}" up
+ip link set "${vf_reprs[1]}" up promisc on
+ip link set "${vf_reprs[2]}" up
+ip link set "$PF" up
+ip link set br-hbn up
+
+bridge vlan del vid 1 dev br-hbn self
+bridge vlan del vid 1 dev "${vf_reprs[1]}"
+bridge vlan del vid 1 dev "${vf_reprs[2]}"
+bridge vlan add vid 42 dev "${vf_reprs[1]}"
+bridge vlan add vid 42 dev "${vf_reprs[2]}" untagged pvid
+
 ip netns add hbn
 ip link set $VF_UPLINK netns hbn
 ip link set $VF_PE netns hbn
 ip netns add pod
 ip link set $VF_POD netns pod
 EOF
+
 run "$PANE_SETUP" "bash /tmp/setup.sh"
 
 wait_key
@@ -205,7 +234,7 @@ tmux send-keys -t "$PANE_SETUP" \
 tmux rename-window -t setup grout
 tmux select-pane -t "$PANE_SETUP" -T grout
 clear_pane "$PANE_SETUP"
-run "$PANE_SETUP" "grout"
+run "$PANE_SETUP" "taskset -c 0,10,30 grout"
 
 # Wait for presenter to confirm grout is up
 wait_key
@@ -268,8 +297,9 @@ exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
 export BASH_XTRACEFD=9
 export PS4='+ '
 set -xe
-ip addr add 172.16.0.2/24 dev $REMOTE_IFACE
+ip link set lo up
 ip link set $REMOTE_IFACE up
+ip addr add 172.16.0.2/24 dev $REMOTE_IFACE
 ip link add vni42 type vxlan id 42 local 172.16.0.2 dstport 4789 dev $REMOTE_IFACE
 ip link add br42 type bridge
 ip link set vni42 master br42
@@ -296,17 +326,26 @@ wait_key
 step "Phase 7: Diagnose the problem"
 tmux select-pane -t "$PANE_HBN"
 
-run "$PANE_HBN" "tcpdump -i grout:uplink -tpnnve udp"
+run "$PANE_HBN" "tcpdump -i grout:uplink -lpnn | sed '/^[0-2][0-9]:/i\\-------'"
 
 # Audience sees ARP requests in VXLAN going out, no reply.
 # Presenter presses F5 to move on.
 
 step "Phase 8: Find and fix the bug"
 tmux select-pane -t "$PANE_HOST"
-run "$PANE_HOST" "ip link show br42"
+run "$PANE_HOST" "ip -br addr show"
 run "$PANE_HOST" "ip link set br42 up"
 
 # Audience sees ping starting to work and tcpdump showing replies.
+
+step "Phase 9: Show installed MAC filter from learned FDB entries"
+tmux select-pane -t "$PANE_HBN"
+wait_key
+tmux send-keys -t "$PANE_HBN" C-c
+clear_pane "$PANE_HBN"
+run "$PANE_HBN" "grcli fdb"
+run "$PANE_HBN" "grcli mac"
+
 # Presenter presses F5 to end.
 wait_key
 exit 0
