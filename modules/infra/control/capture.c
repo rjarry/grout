@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Vincent Jardin, Free Mobile
 
 #include "capture.h"
-#include "config.h"
 #include "event.h"
 #include "iface.h"
 #include "log.h"
@@ -35,23 +34,6 @@
 LOG_TYPE("capture");
 
 #define CAPTURE_SNAP_MAX 4096
-
-static int find_min_pagesz(const struct rte_memseg_list *msl, void *arg) {
-	size_t *min = arg;
-	if (msl->external == 0 && msl->page_sz < *min)
-		*min = msl->page_sz;
-	return 0;
-}
-
-static size_t dpdk_hugepage_size(void) {
-	size_t min = SIZE_MAX;
-	rte_memseg_list_walk(find_min_pagesz, &min);
-	return min == SIZE_MAX ? 0 : min;
-}
-
-static size_t round_up(size_t size, size_t align) {
-	return (size + align - 1) & ~(align - 1);
-}
 
 _Atomic(struct capture_session *) iface_capture[GR_MAX_IFACES];
 
@@ -236,16 +218,7 @@ struct capture_session *capture_session_start(
 	uint32_t slot_count = GR_CAPTURE_SLOT_COUNT_DEFAULT;
 	s->memfd_size = gr_capture_ring_memsize(slot_count, n_ifaces);
 
-	unsigned memfd_flags = MFD_CLOEXEC;
-	size_t pg_sz = dpdk_hugepage_size();
-	if (pg_sz > 0) {
-		unsigned huge_flag = rte_log2_u64(pg_sz) << MAP_HUGE_SHIFT;
-		memfd_flags |= MFD_HUGETLB | huge_flag;
-		s->mmap_flags = MAP_HUGETLB | huge_flag;
-		s->memfd_size = round_up(s->memfd_size, pg_sz);
-	}
-
-	s->memfd = memfd_create("grout-capture", memfd_flags);
+	s->memfd = memfd_create("grout-capture", MFD_CLOEXEC);
 	if (s->memfd < 0) {
 		LOG(ERR, "memfd_create: %s", strerror(errno));
 		goto err_free;
@@ -255,13 +228,9 @@ struct capture_session *capture_session_start(
 		goto err_close;
 	}
 
-	// Seals are not supported with MFD_HUGETLB.
-	if (!(memfd_flags & MFD_HUGETLB))
-		fcntl(s->memfd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL);
+	fcntl(s->memfd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL);
 
-	s->ring = mmap(
-		NULL, s->memfd_size, PROT_READ | PROT_WRITE, MAP_SHARED | s->mmap_flags, s->memfd, 0
-	);
+	s->ring = mmap(NULL, s->memfd_size, PROT_READ | PROT_WRITE, MAP_SHARED, s->memfd, 0);
 	if (s->ring == MAP_FAILED) {
 		LOG(ERR, "mmap: %s", strerror(errno));
 		s->ring = NULL;
