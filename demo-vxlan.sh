@@ -52,9 +52,7 @@ fi
 
 if [ "${_DEMO_INSIDE_TMUX:-}" != 1 ]; then
 	export _DEMO_INSIDE_TMUX=1
-	exec tmux -f /dev/null -L demo-vxlan new-session \
-		-n demo-vxlan \
-		"$0" "$@"
+	exec tmux new-session -n demo-vxlan "$0" "$@"
 fi
 
 # ---- tmux session configuration ----
@@ -190,7 +188,8 @@ for vf in 0 1 2; do
 	vf_reprs[$vf]=$repr
 done
 
-cat > /tmp/setup.sh <<EOF
+cat > /tmp/allocate-vfs.sh <<EOF
+#!/bin/bash
 exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
 export BASH_XTRACEFD=9
 export PS4='+ '
@@ -198,6 +197,15 @@ set -xe
 
 devlink dev eswitch show pci/$pci
 cat /sys/class/net/$PF/device/sriov_numvfs
+EOF
+chmod +x /tmp/allocate-vfs.sh
+run "$PANE_SETUP" /tmp/allocate-vfs.sh
+
+cat > /tmp/configure-switchdev.sh <<EOF
+exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
+export BASH_XTRACEFD=9
+export PS4='+ '
+set -xe
 
 ip link add br-hbn type bridge vlan_filtering 1
 ip link set "${vf_reprs[0]}" master br-hbn
@@ -215,6 +223,15 @@ bridge vlan del vid 1 dev "${vf_reprs[1]}"
 bridge vlan del vid 1 dev "${vf_reprs[2]}"
 bridge vlan add vid 42 dev "${vf_reprs[1]}"
 bridge vlan add vid 42 dev "${vf_reprs[2]}" untagged pvid
+EOF
+chmod +x /tmp/configure-switchdev.sh
+run "$PANE_SETUP" /tmp/configure-switchdev.sh
+
+cat > /tmp/move-vfs-to-netns.sh <<EOF
+exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
+export BASH_XTRACEFD=9
+export PS4='+ '
+set -xe
 
 ip netns add hbn
 ip link set $VF_UPLINK netns hbn
@@ -222,8 +239,8 @@ ip link set $VF_PE netns hbn
 ip netns add pod
 ip link set $VF_POD netns pod
 EOF
-
-run "$PANE_SETUP" "bash /tmp/setup.sh"
+chmod +x /tmp/move-vfs-to-netns.sh
+run "$PANE_SETUP" /tmp/move-vfs-to-netns.sh
 
 wait_key
 step "Phase 2: Start grout"
@@ -261,6 +278,7 @@ tmux send-keys -t "$PANE_HOST" "export PS1=\"$PS1_HOST\"" Enter
 tmux send-keys -t "$PANE_HOST" "ip netns add host" Enter
 tmux send-keys -t "$PANE_HOST" "ip link set $REMOTE_IFACE netns host" Enter
 tmux send-keys -t "$PANE_HOST" "ip netns exec host bash --norc" Enter
+tmux send-keys -t "$PANE_HOST" "ip link set lo up" Enter
 clear_pane "$PANE_HOST"
 
 tmux split-window -v -f -t "$PANE_POD" "PS1=\"$PS1_GROUT\" ip netns exec hbn bash --norc"
@@ -275,18 +293,24 @@ clear_pane "$PANE_HBN"
 # Focus the hbn pane for grout configuration
 tmux select-pane -t "$PANE_HBN"
 
-cat > /tmp/grout.conf <<EOF
+cat > /tmp/grout-underlay.conf <<EOF
 interface add port pe devargs $VF_PE_PCI
 interface add vrf underlay
 interface add port uplink devargs $VF_UPLINK_PCI vrf underlay
 address add 172.16.0.1/24 iface uplink
+EOF
+run "$PANE_HBN" "grcli -xef /tmp/grout-underlay.conf"
+
+cat > /tmp/grout-overlay.conf <<EOF
 interface add bridge br42
 interface add vlan vlan42 parent pe vlan_id 42 domain br42
 interface add vxlan vni42 vni 42 local 172.16.0.1 domain br42 encap_vrf underlay
 flood vtep add 172.16.0.2 vni 42 vrf underlay
 EOF
+run "$PANE_HBN" "grcli -xef /tmp/grout-overlay.conf"
 
-run "$PANE_HBN" "grcli -xef /tmp/grout.conf"
+wait_key
+clear_pane "$PANE_HBN"
 run "$PANE_HBN" "grcli interface show"
 
 step "Phase 4: Remote host configuration"
@@ -297,7 +321,6 @@ exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
 export BASH_XTRACEFD=9
 export PS4='+ '
 set -xe
-ip link set lo up
 ip link set $REMOTE_IFACE up
 ip addr add 172.16.0.2/24 dev $REMOTE_IFACE
 ip link add vni42 type vxlan id 42 local 172.16.0.2 dstport 4789 dev $REMOTE_IFACE
@@ -325,6 +348,7 @@ wait_key
 
 step "Phase 7: Diagnose the problem"
 tmux select-pane -t "$PANE_HBN"
+clear_pane "$PANE_HBN"
 
 run "$PANE_HBN" "tcpdump -i grout:uplink -lpnn | sed '/^[0-2][0-9]:/i\\-------'"
 
