@@ -24,61 +24,93 @@
 #   F5  - advance to next step
 #   F9  - cleanup and exit
 
-set -e
+trap '' PIPE
 
-# ---- Configuration (adapt before running) ----
-PF=ens1f0np0
-VF_UPLINK_PCI=0000:18:00.2
-VF_PE_PCI=0000:18:00.3
-VF_UPLINK=ens1f0v0
-VF_PE=ens1f0v1
-VF_POD=ens1f0v2
-REMOTE_HOST=root@dell-r450-nfv2023-02.lab.eng.brq2.redhat.com
-REMOTE_IFACE=ens1f0np0
-
-BUILDDIR=${BUILDDIR:-$PWD/build}
-
-# ---- PS1 prompts ----
-PS1_SETUP='\[\033[38;5;39m\][setup ~]#\[\033[0m\] '
-PS1_GROUT='\[\033[38;5;202m\][grout ~]#\[\033[0m\] '
-PS1_HOST='\[\033[38;5;118m\][host ~]#\[\033[0m\] '
-PS1_POD='\[\033[38;5;214m\][pod ~]#\[\033[0m\] '
-
-# ---- Bootstrap: re-exec inside a dedicated tmux session ----
-if [ "$(id -u)" -ne 0 ]; then
-	echo "error: must run as root" >&2
-	exit 1
+if [ "${_UNSHARED:-}" != 1 ]; then
+	export _UNSHARED=1
+	export BUILDDIR=${BUILDDIR:-$PWD/build}
+	export PATH="$BUILDDIR:$PATH"
+	export GROUT_PAGER=""
+	export LD_LIBRARY_PATH="$BUILDDIR/subprojects/libpcap"
+	export PCAP_PLUGIN_DIR="$BUILDDIR/pcap"
+	export PAGER='less'
+	export LESS='-RS'
+	export LESSSECURE=1
+	export CLICOLOR=1
+	export LESS_TERMCAP_md=$'\e[1;36m'
+	export LESS_TERMCAP_me=$'\e[0m'
+	export LESS_TERMCAP_us=$'\e[1;32m'
+	export LESS_TERMCAP_ue=$'\e[0m'
+	export GROFF_NO_SGR=1
+	export HISTTIMEFORMAT="%a %F %T -- "
+	export HISTSIZE=10000
+	export HISTIGNORE=ls:ps:history:ll:l:jobs
+	export HISTCONTROL=ignoreboth
+	exec unshare --mount --net -- "$0" "$@"
 fi
 
-if [ "${_DEMO_INSIDE_TMUX:-}" != 1 ]; then
-	export _DEMO_INSIDE_TMUX=1
-	exec tmux new-session -n demo-vxlan "$0" "$@"
+if [ "$_MOUNTS" != 1 ]; then
+	# prevent any mount events from leaking to the host
+	mount --make-rprivate /
+	# start with a clean /run/netns, free of any stale host entries
+	mkdir -p /run/netns
+	mount -t tmpfs tmpfs /run/netns
+	export _MOUNTS=1
 fi
+
+if [ -z "$_TMUX_SOCK" ]; then
+	export _TMUX_SOCK="demo-$$"
+	exec tmux -L "$_TMUX_SOCK" new-session -n demo "$0" "$@"
+fi
+
+cd ~
+ip link set lo up
+
+cat > /tmp/bashrc <<'EOF'
+if shopt -q progcomp && [ -z "$BASH_COMPLETION_COMPAT_DIR" ]; then
+	if [ -r /usr/share/bash-completion/bash_completion ]; then
+		. /usr/share/bash-completion/bash_completion
+	elif [ -r /etc/bash_completion ]; then
+		. /etc/bash_completion
+	fi
+	. $BUILDDIR/../cli/grcli.bash-completion
+fi
+fancy_prompt() {
+	local Z="\[\e[0m\]"		# unset all colors
+	local H='\$'
+	local index host
+	local netns=$(ip netns identify 2>/dev/null)
+	if [ -n "$netns" ]; then
+		host="$netns"
+	else
+		host="grout"
+	fi
+	index=$(echo "$host" | md5sum | head -c1)
+	local h U color p
+	declare -a palette
+	declare -A colors
+	palette=(33 37 39 40 51 73 118 121 159 162 174 202 206 208 214 216 219 226 229)
+	local i=0 j=0
+	for i in {0..9} {a..f}; do
+		colors[$i]=${palette[$j]}
+		j=$(((j + 1) % ${#palette[@]}))
+	done
+	if [ -n "$BASH_PROMPT_COLOR" ]; then
+		color="$BASH_PROMPT_COLOR"
+	else
+		color=${colors[$index]}
+	fi
+	PS1="\[\e[38;5;${color}m\][$host ~]\$$Z "
+	export PS1
+}
+fancy_prompt
+unset -f fancy_prompt
+if [ -f ~/.bash_aliases ]; then
+	. ~/.bash_aliases
+fi
+EOF
 
 # ---- tmux session configuration ----
-tmux set -g prefix C-b
-tmux set -g extended-keys on
-tmux set -g extended-keys-format csi-u
-tmux set -g allow-passthrough on
-tmux set -s set-clipboard on
-tmux set -g focus-events on
-tmux set -g default-terminal tmux-256color
-tmux set -g history-limit 30000
-tmux set -sg escape-time 10
-tmux set -g mouse off
-tmux set -g allow-passthrough on
-tmux set -g base-index 1
-tmux set -g renumber-windows on
-
-tmux set -g status-position top
-tmux setw -g mode-style 'fg=colour15 bg=colour32 none'
-tmux set -g message-command-style 'fg=colour16 bg=colour32 bold'
-tmux set -g message-style 'fg=colour15 bg=colour32 bold'
-tmux set -g pane-border-status top
-tmux set -g pane-border-format ' #{pane_title} '
-tmux set -g pane-border-style 'fg=colour244 bg=default none'
-tmux set -g pane-active-border-style 'fg=colour32 bg=default bold'
-tmux set -g status-style 'fg=colour244 bg=default none'
 tmux set -g status-left-length 100
 tmux set -g status-right-length 70
 tmux set -g status-left ""
@@ -87,51 +119,37 @@ tmux set -g window-status-format ""
 tmux set -g window-status-current-format ""
 tmux set -g window-status-separator ""
 
-tmux setw -g mode-keys vi
-tmux setw -g allow-rename off
-
-# switch windows using Ctrl-Alt Left/Right or Alt-Page Up/Down
-tmux bind -n M-PPage select-window -p
-tmux bind -n M-NPage select-window -n
-tmux bind -n C-M-Left select-window -p
-tmux bind -n C-M-Right select-window -n
-# switch panes using Alt-arrows
-tmux bind -n M-Up    select-pane -U
-tmux bind -n M-Down  select-pane -D
-tmux bind -n M-Left  select-pane -L
-tmux bind -n M-Right select-pane -R
-tmux bind -n M-f     resize-pane -Z
-# prefix pageup enter copy mode
-tmux bind -T root         S-PPage copy-mode -u
-tmux bind -T copy-mode-vi S-NPage send-keys -X page-down
-tmux bind -T copy-mode-vi S-PPage send-keys -X page-up
-tmux bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
-
-# environment variables for grcli and tcpdump
-tmux set-environment PATH "$BUILDDIR:$PATH"
-export PATH="$BUILDDIR:$PATH"
-tmux set-environment GROUT_PAGER ""
-export GROUT_PAGER=""
-tmux set-environment LD_LIBRARY_PATH "$BUILDDIR/subprojects/libpcap"
-export LD_LIBRARY_PATH="$BUILDDIR/subprojects/libpcap"
-tmux set-environment PCAP_PLUGIN_DIR "$BUILDDIR/pcap"
-export PCAP_PLUGIN_DIR="$BUILDDIR/pcap"
-
-# ---- Step machinery ----
-DEMO_SIGNAL="demo-$$"
+declare -a NETNS_LIST
 
 cleanup() {
 	set +e
-	ip netns pids pod 2>/dev/null | xargs -r kill
-	ip netns del pod 2>/dev/null
-	ip netns pids hbn 2>/dev/null | xargs -r kill
-	ip netns del hbn
-	echo 0 > "/sys/class/net/$PF/device/sriov_numvfs"
-	ip link del br-hbn
-	ssh "$REMOTE_HOST" "ip netns del host"
+	local ns pids
+	killall grout
+	for ns in "${NETNS_LIST[@]}"; do
+		pids=$(ip netns pids "$ns")
+		if [ -n "$pids" ]; then
+			kill -TERM $pids 2>/dev/null
+			timeout 0.5 wait $pids 2>/dev/null
+			kill -KILL $pids 2>/dev/null
+		fi
+		ip netns del "$ns"
+	done
 	tmux kill-server
 } 2>/dev/null
+
 trap cleanup EXIT
+
+netns_add() {
+	local ns="$1"
+	ip netns add "$ns"
+	ip netns exec "$ns" sysctl -wq net.ipv6.conf.all.disable_ipv6=1
+	ip netns exec "$ns" sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+	ip -n "$ns" link set lo up
+	NETNS_LIST+=("$ns")
+}
+
+# ---- Step machinery ----
+DEMO_SIGNAL="demo-$$"
 
 tmux bind -n F5 run-shell -b \
 	"tmux set -g @demo_action next && tmux wait-for -S $DEMO_SIGNAL"
@@ -165,210 +183,124 @@ clear_pane() {
 	tmux send-keys -t "$1" C-l
 }
 
+TAP_COUNT=0
+add_port() {
+	local name=$1 ns=$2
+	shift 2
+	run "$PANE_PE" grcli interface add port $name devargs net_tap$TAP_COUNT "$@"
+	sleep 1
+	ip link set dtap0 netns $ns
+	ip -n $ns link set dtap0 name eth0
+	ip -n $ns link set eth0 up
+	TAP_COUNT=$((TAP_COUNT+1))
+}
+
 # ======================================================================
 # DEMO START
 # ======================================================================
 
+netns_add pod
+netns_add host
+
 # Window 1 is this script (never shown). Create window 2 for setup.
-tmux new-window -n setup "PS1=\"$PS1_SETUP\" bash --norc"
-PANE_SETUP=$(tmux display-message -p '#{pane_id}')
-tmux select-pane -t "$PANE_SETUP" -T setup
+tmux new-window -n grout "bash --rcfile /tmp/bashrc"
+PANE_GROUT=$(tmux display-message -p '#{pane_id}')
+tmux select-pane -t "$PANE_GROUT" -T grout
 
-step "Phase 1: VFs setup"
+step "Phase 1: Start grout"
 
-device=$(readlink -e /sys/class/net/$PF/device)
-pci=$(basename $device)
-ip link del br-hbn 2>/dev/null || true
-devlink dev eswitch set pci/$pci mode switchdev
-echo 3 | tee /sys/class/net/$PF/device/sriov_numvfs
-
-declare -A vf_reprs
-for vf in 0 1 2; do
-	repr=$(grep -l "pf[0-9]*vf$vf" $device/net/*/phys_port_name | xargs dirname | xargs basename)
-	vf_reprs[$vf]=$repr
-done
-
-cat > /tmp/allocate-vfs.sh <<EOF
-#!/bin/bash
-exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
-export BASH_XTRACEFD=9
-export PS4='+ '
-set -xe
-
-devlink dev eswitch show pci/$pci
-cat /sys/class/net/$PF/device/sriov_numvfs
-EOF
-chmod +x /tmp/allocate-vfs.sh
-run "$PANE_SETUP" /tmp/allocate-vfs.sh
-
-cat > /tmp/configure-switchdev.sh <<EOF
-exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
-export BASH_XTRACEFD=9
-export PS4='+ '
-set -xe
-
-ip link add br-hbn type bridge vlan_filtering 1
-ip link set "${vf_reprs[0]}" master br-hbn
-ip link set "${vf_reprs[1]}" master br-hbn
-ip link set "${vf_reprs[2]}" master br-hbn
-ip link set "$PF" master br-hbn
-ip link set "${vf_reprs[0]}" up
-ip link set "${vf_reprs[1]}" up promisc on
-ip link set "${vf_reprs[2]}" up
-ip link set "$PF" up
-ip link set br-hbn up
-
-bridge vlan del vid 1 dev br-hbn self
-bridge vlan del vid 1 dev "${vf_reprs[1]}"
-bridge vlan del vid 1 dev "${vf_reprs[2]}"
-bridge vlan add vid 42 dev "${vf_reprs[1]}"
-bridge vlan add vid 42 dev "${vf_reprs[2]}" untagged pvid
-EOF
-chmod +x /tmp/configure-switchdev.sh
-run "$PANE_SETUP" /tmp/configure-switchdev.sh
-
-cat > /tmp/move-vfs-to-netns.sh <<EOF
-exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
-export BASH_XTRACEFD=9
-export PS4='+ '
-set -xe
-
-ip netns add hbn
-ip link set $VF_UPLINK netns hbn
-ip link set $VF_PE netns hbn
-ip netns add pod
-ip link set $VF_POD netns pod
-EOF
-chmod +x /tmp/move-vfs-to-netns.sh
-run "$PANE_SETUP" /tmp/move-vfs-to-netns.sh
+run "$PANE_GROUT" grout -t
 
 wait_key
-step "Phase 2: Start grout"
 
-# Replace the setup shell with an hbn netns shell, rename window
-tmux send-keys -t "$PANE_SETUP" \
-	"PS1=\"$PS1_GROUT\" exec ip netns exec hbn bash --norc" Enter
-tmux rename-window -t setup grout
-tmux select-pane -t "$PANE_SETUP" -T grout
-clear_pane "$PANE_SETUP"
-run "$PANE_SETUP" "taskset -c 0,10,30 grout"
+step "Phase 2: Configure grout uplink port"
+tmux new-window -n pe "bash --rcfile /tmp/bashrc"
+PANE_PE=$(tmux display-message -p '#{pane_id}')
+tmux select-pane -t "$PANE_PE" -T pe
 
-# Wait for presenter to confirm grout is up
-wait_key
-
-# ---- Phase 3: Create main window with 3 panes ----
-# Layout:
-#   +---------------------+---------------------+
-#   |        pod          |        host          |
-#   +---------------------+---------------------+
-#   |              hbn (grout commands)          |
-#   +-------------------------------------------+
-
-step "Phase 3: Configure grout interfaces"
-
-tmux new-window -n main \
-	"PS1=\"$PS1_POD\" ip netns exec pod bash --norc"
+tmux split-window -v "ip netns exec pod bash --rcfile /tmp/bashrc"
 PANE_POD=$(tmux display-message -p '#{pane_id}')
 tmux select-pane -t "$PANE_POD" -T pod
 
-tmux split-window -h -t "$PANE_POD" "ssh -t $REMOTE_HOST"
+tmux split-window -h "ip netns exec host bash --rcfile /tmp/bashrc"
 PANE_HOST=$(tmux display-message -p '#{pane_id}')
 tmux select-pane -t "$PANE_HOST" -T host
-tmux send-keys -t "$PANE_HOST" "export PS1=\"$PS1_HOST\"" Enter
-tmux send-keys -t "$PANE_HOST" "ip netns add host" Enter
-tmux send-keys -t "$PANE_HOST" "ip link set $REMOTE_IFACE netns host" Enter
-tmux send-keys -t "$PANE_HOST" "ip netns exec host bash --norc" Enter
-tmux send-keys -t "$PANE_HOST" "ip link set lo up" Enter
-clear_pane "$PANE_HOST"
 
-tmux split-window -v -f -t "$PANE_POD" "PS1=\"$PS1_GROUT\" ip netns exec hbn bash --norc"
-PANE_HBN=$(tmux display-message -p '#{pane_id}')
-tmux select-pane -t "$PANE_HBN" -T hbn
+# Focus the pe pane for grout configuration
+tmux select-pane -t "$PANE_PE"
 
-# Clear all panes
-clear_pane "$PANE_POD"
-clear_pane "$PANE_HOST"
-clear_pane "$PANE_HBN"
+grcli route config set default rib4-routes 128 rib6-routes 128
 
-# Focus the hbn pane for grout configuration
-tmux select-pane -t "$PANE_HBN"
+run "$PANE_PE" grcli interface add vrf underlay
 
-cat > /tmp/grout-underlay.conf <<EOF
-interface add port pe devargs $VF_PE_PCI
-interface add vrf underlay
-interface add port uplink devargs $VF_UPLINK_PCI vrf underlay
-address add 172.16.0.1/24 iface uplink
-EOF
-run "$PANE_HBN" "grcli -xef /tmp/grout-underlay.conf"
+add_port uplink host vrf underlay
 
-cat > /tmp/grout-overlay.conf <<EOF
-interface add bridge br42
-interface add vlan vlan42 parent pe vlan_id 42 domain br42
-interface add vxlan vni42 vni 42 local 172.16.0.1 domain br42 encap_vrf underlay
-flood vtep add 172.16.0.2 vni 42 vrf underlay
-EOF
-run "$PANE_HBN" "grcli -xef /tmp/grout-overlay.conf"
+run "$PANE_PE" grcli address add 172.16.0.1/24 iface uplink
 
-wait_key
-clear_pane "$PANE_HBN"
-run "$PANE_HBN" "grcli interface show"
+step "Phase 3: Configure remote host port"
+tmux select-pane -t "$PANE_HOST"
+run "$PANE_HOST" ip addr add 172.16.0.2/24 dev eth0
 
-step "Phase 4: Remote host configuration"
+step "Phase 4: Ensure uplink can reach remote host"
+tmux select-pane -t "$PANE_PE"
+run "$PANE_PE" grcli ping 172.16.0.2 vrf underlay count 3 delay 100
+
+step "Phase 5: Configure VXLAN overlay"
+run "$PANE_PE" grcli interface add bridge br42
+add_port pe pod domain br42
+
+run "$PANE_PE" grcli interface add vxlan vni42 vni 42 local 172.16.0.1 domain br42 encap_vrf underlay
 
 tmux select-pane -t "$PANE_HOST"
-ssh "$REMOTE_HOST" "cat > /tmp/vxlan-setup.sh" <<EOF
-exec 9> >(awk '{print "\\033[36m" \$0 "\\033[0m"}')
-export BASH_XTRACEFD=9
-export PS4='+ '
-set -xe
-ip link set $REMOTE_IFACE up
-ip addr add 172.16.0.2/24 dev $REMOTE_IFACE
-ip link add vni42 type vxlan id 42 local 172.16.0.2 dstport 4789 dev $REMOTE_IFACE
-ip link add br42 type bridge
-ip link set vni42 master br42
-ip link set vni42 up
-ip addr add 10.88.0.2/24 dev br42
-bridge fdb add 00:00:00:00:00:00 dev vni42 self vni 42 dst 172.16.0.1
-EOF
-run "$PANE_HOST" "bash /tmp/vxlan-setup.sh"
+run "$PANE_HOST" ip link add br42 type bridge
+run "$PANE_HOST" ip link add vni42 type vxlan id 42 local 172.16.0.2 dstport 4789 dev eth0
+run "$PANE_HOST" ip link set vni42 master br42
+run "$PANE_HOST" ip link set vni42 up
 
-# NOTE: intentionally skip "ip link set br42 up"
+step "Phase 6: Configure VXLAN flood entries"
+run "$PANE_HOST" bridge fdb add 00:00:00:00:00:00 dev vni42 self vni 42 dst 172.16.0.1
 
-step "Phase 5: Pod configuration"
+tmux select-pane -t "$PANE_PE"
+run "$PANE_PE" grcli flood vtep add 172.16.0.2 vni 42 vrf underlay
+
+step "Phase 7: Assign private inner address on host bridge"
+tmux select-pane -t "$PANE_HOST"
+run "$PANE_HOST" ip addr add 10.88.0.2/24 dev br42
+
+step "Phase 8: Assign private inner address in pod"
 tmux select-pane -t "$PANE_POD"
-run "$PANE_POD" "ip addr add 10.88.0.1/24 dev $VF_POD"
-run "$PANE_POD" "ip link set $VF_POD up"
+run "$PANE_POD" "ip addr add 10.88.0.1/24 dev eth0"
 
-step "Phase 6: Ping remote host"
+step "Phase 9: Ping remote host"
 run "$PANE_POD" "ping 10.88.0.2"
 
 # Ping runs continuously, audience sees timeouts.
 # Presenter presses F5 to move on.
 wait_key
 
-step "Phase 7: Diagnose the problem"
-tmux select-pane -t "$PANE_HBN"
-clear_pane "$PANE_HBN"
+step "Phase 10: Diagnose the problem"
+tmux select-pane -t "$PANE_PE"
+clear_pane "$PANE_PE"
 
-run "$PANE_HBN" "tcpdump -i grout:uplink -lpnn | sed '/^[0-2][0-9]:/i\\-------'"
+run "$PANE_PE" "tcpdump -i grout:uplink -lpnn | sed '/^[0-2][0-9]:/i\\-------'"
 
 # Audience sees ARP requests in VXLAN going out, no reply.
 # Presenter presses F5 to move on.
 
-step "Phase 8: Find and fix the bug"
+step "Phase 11: Find and fix the bug"
 tmux select-pane -t "$PANE_HOST"
+clear_pane "$PANE_HOST"
 run "$PANE_HOST" "ip -br addr show"
 run "$PANE_HOST" "ip link set br42 up"
 
 # Audience sees ping starting to work and tcpdump showing replies.
 
-step "Phase 9: Show installed MAC filter from learned FDB entries"
-tmux select-pane -t "$PANE_HBN"
+step "Phase 12: Show learned FDB entries"
+tmux select-pane -t "$PANE_PE"
 wait_key
-tmux send-keys -t "$PANE_HBN" C-c
-clear_pane "$PANE_HBN"
-run "$PANE_HBN" "grcli fdb"
-run "$PANE_HBN" "grcli mac"
+tmux send-keys -t "$PANE_PE" C-c
+clear_pane "$PANE_PE"
+run "$PANE_PE" "grcli fdb"
 
 # Presenter presses F5 to end.
 wait_key
