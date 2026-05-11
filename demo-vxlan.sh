@@ -315,12 +315,13 @@ run "$PANE_POD" "ping 10.88.0.2"
 
 # Ping runs continuously, audience sees timeouts.
 # Presenter presses F5 to move on.
-wait_key
-
 step "Phase 10: Diagnose the problem"
 tmux select-pane -t "$PANE_PE"
-clear_pane "$PANE_PE"
 
+run "$PANE_PE" "grcli interface show"
+run "$PANE_PE" "tcpdump -D | grep grout"
+wait_key
+clear_pane "$PANE_PE"
 run "$PANE_PE" "tcpdump -i grout:uplink -lpnn | sed '/^[0-2][0-9]:/i\\-------'"
 
 # Audience sees ARP requests in VXLAN going out, no reply.
