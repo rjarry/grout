@@ -207,6 +207,45 @@ tmux new-window -n grout "bash --rcfile /tmp/bashrc"
 PANE_GROUT=$(tmux display-message -p '#{pane_id}')
 tmux select-pane -t "$PANE_GROUT" -T grout
 
+step "Topology"
+
+
+cat > /tmp/topology <<'EOF'
+#!/bin/bash
+
+echo
+echo   "   ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
+echo   "   │                                         grout                            ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐ │"
+echo   "   │                                                                                  VRF 'underlay'        │"
+echo   "   │                                                                          │                           │ │"
+echo   "   │                                                                                                        │"
+echo   "   │                                                                          │                           │ │"
+echo   "   │                                                                                                        │"
+echo   "   │      ┌────────┐                       ┌─────────┐                        │                           │ │"
+echo   "   │      │  br42  ├───────────────────────┤  vni42  │                                                      │"
+echo   "   │      └───┬────┘                       └─────────┘                        │                           │ │"
+echo   "   │          │                         encap_vrf underlay                                                  │"
+echo   "   │          │                          local 172.16.0.1                     │             172.16.0.1/24 │ │"
+echo   "   │          │                          flood 172.16.0.2                                    ┌─────────┐    │"
+echo   "   │     ┌────┴────┐                                                          │              │ uplink  │  │ │"
+echo   "   │     │   pe    │                                                                         └────┬────┘    │"
+echo   "   │     └────┬────┘                                                          └ ─ ─ ─ ─ ─ ─ ─ ─ ─ │ ─ ─ ─ ┘ │"
+echo   "   └──────────│───────────────────────────────────────────────────────────────────────────────────│─────────┘"
+echo   "              │                                                                                   │          "
+echo   "              │                                                                             VXLAN │ underlay "
+echo   "              │                                                                                   │          "
+echo   "   ┌──────────│───────────┐                 ┌─────────────────────────────────────────────────────│─────────┐"
+echo   "   │      ┌───┴────┐      │                 │           ┌────────┐      ┌─────────┐           ┌───┴────┐    │"
+echo   "   │      │  eth0  │ < - -│- - - - - - - - -│- - - - -> │  br42  ├──────┤  vni42  │           │  eth0  │    │"
+echo   "   │      └────────┘      │    overlay      │           └────────┘      └─────────┘           └────────┘    │"
+echo   "   │     10.88.0.1/24     │                 │          10.88.0.2/24   local 172.16.0.2       172.16.0.2/24  │"
+echo   "   │                      │                 │                         flood 172.16.0.1                      │"
+echo   "   │                      │                 │                                                               │"
+echo   "   └──────────────────────┘                 └───────────────────────────────────────────────────────────────┘"
+EOF
+
+tmux display-popup -h 31 -w 115 -x C -y C -s 'fg=colour32 bg=default bold' -B bash /tmp/topology
+
 step "Phase 1: Start grout"
 
 run "$PANE_GROUT" grout -t
