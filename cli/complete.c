@@ -42,7 +42,7 @@ static struct ec_node *bash_complete_node(struct ec_node *cmdlist) {
 			EC_NO_ID,
 			ec_node("any", "prog_name"),
 			ec_node_option(EC_NO_ID, grcli_options_node()),
-			cmdlist
+			ec_node_clone(cmdlist)
 		)
 	);
 }
