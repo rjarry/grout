@@ -179,6 +179,41 @@ if abidiff.found() and git.found() and fs.is_dir('.git')
   )
 endif
 
+gen_go_python = import('python').find_installation('python3',
+  modules: ['elftools'], required: false,
+)
+gen_go_cc = ' '.join(compiler.cmd_array() + ['-std=' + get_option('c_std')] + project_c_flags)
+gen_go_outdir = meson.current_build_dir() / 'go'
+gen_go_py = files('devtools/gen-go.py')
+if gen_go_python.found()
+  # Generate Go bindings into the build dir and check that the committed
+  # files in go/ are up to date. Fails the build if they differ.
+  custom_target(
+    'gen_go_check',
+    output: '.gen_go_check.stamp',
+    command: [
+      gen_go_python, gen_go_py,
+      '-o', gen_go_outdir,
+      '-d', meson.project_source_root() / 'go',
+      '-s', '@OUTPUT@',
+      '--cc=' + gen_go_cc,
+      api_headers,
+    ],
+    depend_files: api_headers + files('devtools/gen-go.py'),
+    build_by_default: true,
+  )
+  # Regenerate Go bindings and copy them to the source tree.
+  run_target(
+    'update-go',
+    command: [
+      gen_go_python, gen_go_py,
+      '-o', meson.project_source_root() / 'go',
+      '--cc=' + gen_go_cc,
+      api_headers,
+    ],
+  )
+endif
+
 grout_exe = executable(
   'grout', src,
   include_directories: inc + api_inc,

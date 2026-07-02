@@ -167,7 +167,7 @@ frr-rpm:
 CLANG_FORMAT ?= clang-format
 c_src = git ls-files '*.[ch]' ':!:subprojects'
 all_files = git ls-files ':!:subprojects'
-license_exclude = *.svg licenses *.md *.asc subprojects debian .* *.scdoc *.json go/go.mod go/go.sum
+license_exclude = *.svg licenses *.md *.asc subprojects debian .* *.scdoc *.json go/go.mod go/go.sum go/gen_*.go
 
 .PHONY: lint
 lint:
@@ -204,6 +204,10 @@ format:
 	@echo '[clang-format]'
 	$Q tmp=`mktemp` && trap "rm -f $$tmp" EXIT && $(c_src) > "$$tmp" && \
 		$(CLANG_FORMAT) --files="$$tmp" -i --verbose
+
+.PHONY: update-go
+update-go: $(BUILDDIR)/build.ninja
+	$Q ninja -C $(BUILDDIR) update-go
 
 REVISION_RANGE ?= @{u}..
 
