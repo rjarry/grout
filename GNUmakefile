@@ -167,7 +167,7 @@ frr-rpm:
 CLANG_FORMAT ?= clang-format
 c_src = git ls-files '*.[ch]' ':!:subprojects'
 all_files = git ls-files ':!:subprojects'
-licensed_files = git ls-files ':!:*.svg' ':!:licenses' ':!:*.md' ':!:*.asc' ':!:subprojects' ':!:debian' ':!:.*' ':!:*.scdoc' ':!:*.json'
+license_exclude = *.svg licenses *.md *.asc subprojects debian .* *.scdoc *.json go/go.mod go/go.sum
 
 .PHONY: lint
 lint:
@@ -175,7 +175,7 @@ lint:
 	$Q tmp=`mktemp` && trap "rm -f $$tmp" EXIT && $(c_src) > "$$tmp" && \
 		$(CLANG_FORMAT) --files="$$tmp" --dry-run --Werror
 	@echo '[license-check]'
-	$Q ! $(licensed_files) | while read -r f; do \
+	$Q ! git ls-files $(addprefix :!:,$(license_exclude)) | while read -r f; do \
 		if echo "$$f" | grep -q '^frr/'; then \
 			if ! grep -qF 'SPDX-License-Identifier: GPL-2.0-or-later' "$$f"; then \
 				echo "$$f"; \
