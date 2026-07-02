@@ -410,9 +410,9 @@ static int trace_snap_format(char *buf, size_t len, const struct rte_ether_addr 
 	if (rte_is_same_ether_addr(dst, &stp_dst)) {
 		SAFE_BUF(snprintf, len, " / STP");
 	} else if (rte_is_same_ether_addr(dst, &isis_level1)) {
-		SAFE_BUF(snprintf, len, " / IS-IS all Level 1 IS's");
+		SAFE_BUF(snprintf, len, " / IS-IS all Level 1 ISs");
 	} else if (rte_is_same_ether_addr(dst, &isis_level2)) {
-		SAFE_BUF(snprintf, len, " / IS-IS all Level 2 IS's");
+		SAFE_BUF(snprintf, len, " / IS-IS all Level 2 ISs");
 	} else if (rte_is_same_ether_addr(dst, &isis_all)) {
 		SAFE_BUF(snprintf, len, " / IS-IS all routers");
 	}
