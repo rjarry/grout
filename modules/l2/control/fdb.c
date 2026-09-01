@@ -176,6 +176,55 @@ void fdb_purge_iface(uint16_t iface_id) {
 	}
 }
 
+int fdb_add_local(uint16_t bridge_id, const struct rte_ether_addr *mac) {
+	const struct fdb_key key = {bridge_id, 0, *mac};
+	struct fdb_entry *fdb;
+	void *data;
+	int ret;
+
+	if (rte_hash_lookup_data(fdb_hash, &key, &data) == 0)
+		return errno_set(EEXIST);
+
+	if (rte_mempool_get(fdb_pool, &data) < 0)
+		return errno_set(ENOMEM);
+
+	fdb = data;
+	fdb->prev_iface_id = GR_IFACE_ID_UNDEF;
+	fdb->bridge_id = bridge_id;
+	fdb->vlan_id = 0;
+	fdb->mac = *mac;
+	fdb->flags = GR_FDB_F_LOCAL;
+	fdb->iface_id = bridge_id;
+	memset(&fdb->vtep, 0, sizeof(fdb->vtep));
+	fdb->last_seen = gr_clock_ns();
+
+	if ((ret = rte_hash_add_key_data(fdb_hash, &key, fdb)) < 0) {
+		rte_mempool_put(fdb_pool, fdb);
+		return errno_set(-ret);
+	}
+
+	event_push(GR_EVENT_FDB_ADD, fdb);
+
+	return 0;
+}
+
+int fdb_del_local(uint16_t bridge_id, const struct rte_ether_addr *mac) {
+	const struct fdb_key key = {bridge_id, 0, *mac};
+	struct fdb_entry *fdb;
+	void *data;
+
+	if (rte_hash_lookup_data(fdb_hash, &key, &data) < 0)
+		return errno_set(ENOENT);
+
+	fdb = data;
+	if (!(fdb->flags & GR_FDB_F_LOCAL))
+		return errno_set(EPERM);
+
+	rte_hash_del_key(fdb_hash, &key);
+
+	return 0;
+}
+
 static struct api_out fdb_add(const void *request, struct api_ctx *) {
 	const struct gr_fdb_add_req *req = request;
 	const struct iface *iface;
@@ -233,7 +282,13 @@ static struct api_out fdb_add(const void *request, struct api_ctx *) {
 static struct api_out fdb_del(const void *request, struct api_ctx *) {
 	const struct gr_fdb_del_req *req = request;
 	const struct fdb_key key = {req->bridge_id, req->vlan_id, req->mac};
+	void *data;
 	int ret;
+
+	// The bridge's own SVI MAC is managed by the bridge lifecycle.
+	if (rte_hash_lookup_data(fdb_hash, &key, &data) == 0
+	    && (((struct fdb_entry *)data)->flags & GR_FDB_F_LOCAL))
+		return api_out(EPERM, 0, NULL);
 
 	ret = rte_hash_del_key(fdb_hash, &key);
 	if (ret == -ENOENT && req->missing_ok)
@@ -274,6 +329,8 @@ static struct api_out fdb_flush(const void *request, struct api_ctx *) {
 	int ret;
 
 	while (rte_hash_iterate(fdb_hash, &key, &data, &next) >= 0) {
+		if (((struct fdb_entry *)data)->flags & GR_FDB_F_LOCAL)
+			continue;
 		if (!fdb_match(data, req->flags, req->bridge_id, req->iface_id, &req->mac))
 			continue;
 

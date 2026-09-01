@@ -86,7 +86,6 @@ static int bridge_attach_member(struct iface *bridge, struct iface *member) {
 		if (iface_add_eth_addr(member, &m->mac) < 0)
 			return errno_log(errno, "iface_add_eth_addr(member)");
 	}
-	iface_add_eth_addr(member, &br->mac);
 
 	br->members[br->n_members++] = member;
 	member->domain_id = bridge->id;
@@ -108,7 +107,6 @@ static int bridge_detach_member(struct iface *bridge, struct iface *member) {
 			fdb_sync_hardware(bridge, member, false);
 			vec_foreach_ref (struct iface_mac *m, bridge->macs)
 				iface_del_eth_addr(member, &m->mac);
-			iface_del_eth_addr(member, &br->mac);
 
 			if (i < last)
 				br->members[i] = br->members[last];
@@ -132,7 +130,6 @@ static int bridge_fini(struct iface *iface) {
 		fdb_sync_hardware(iface, member, false);
 		vec_foreach_ref (struct iface_mac *m, iface->macs)
 			iface_del_eth_addr(member, &m->mac);
-		iface_del_eth_addr(member, &bridge->mac);
 		iface_set_promisc(member, false);
 		member->vrf_id = vrf_default_get_or_create();
 		if (member->vrf_id != GR_VRF_ID_UNDEF)
@@ -168,7 +165,6 @@ static int bridge_get_eth_addr(const struct iface *iface, struct rte_ether_addr 
 static int bridge_set_eth_addr(struct iface *iface, const struct rte_ether_addr *mac) {
 	struct iface_info_bridge *bridge = iface_info_bridge(iface);
 	struct rte_ether_addr new_mac;
-	int ret;
 
 	if (rte_is_zero_ether_addr(mac)) {
 		rte_eth_random_addr(new_mac.addr_bytes);
@@ -178,13 +174,13 @@ static int bridge_set_eth_addr(struct iface *iface, const struct rte_ether_addr 
 		new_mac = *mac;
 	}
 
-	if (!rte_is_zero_ether_addr(&bridge->mac)) {
-		if ((ret = bridge_all_member_del_mac(bridge, &bridge->mac)) < 0)
-			return ret;
-	}
-	if ((ret = bridge_all_member_add_mac(bridge, &new_mac)) < 0)
-		return ret;
+	// The SVI MAC is programmed into member HW filters through its local FDB
+	// entry (fdb_event_cb / fdb_sync_hardware), not via bridge_all_member_*.
+	if (!rte_is_zero_ether_addr(&bridge->mac) && fdb_del_local(iface->id, &bridge->mac) < 0)
+		LOG(WARNING, "fdb_del_local(%s): %s", iface->name, strerror(errno));
 
+	if (fdb_add_local(iface->id, &new_mac) < 0)
+		LOG(ERR, "fdb_add_local(%s): %s", iface->name, strerror(errno));
 	bridge->mac = new_mac;
 
 	return 0;
