@@ -19,6 +19,26 @@ enum {
 	NB_EDGES,
 };
 
+// Apply every sweep of a flow to a writable packet copy and advance the
+// per-clone cursors. The field is written big-endian and cycles over
+// [start, end] by step.
+static inline void
+tgen_apply_sweeps(struct rte_mbuf *m, const struct tgen_flow_priv *flow, uint64_t *cursors) {
+	for (unsigned s = 0; s < flow->n_sweeps; s++) {
+		const struct tgen_sweep *sw = &flow->sweeps[s];
+		uint64_t val = cursors[s];
+
+		if (likely((uint32_t)sw->offset + sw->size <= rte_pktmbuf_data_len(m))) {
+			uint8_t *p = rte_pktmbuf_mtod_offset(m, uint8_t *, sw->offset);
+			for (unsigned b = 0; b < sw->size; b++)
+				p[b] = (val >> (8 * (sw->size - 1 - b))) & 0xff;
+		}
+
+		uint64_t range = sw->end - sw->start + 1;
+		cursors[s] = sw->start + (val - sw->start + sw->step) % range;
+	}
+}
+
 // tgen_tx generates packets from its flow templates, paces them to the target
 // rate and transmits them straight out of the port with rte_eth_tx_burst().
 static uint16_t tgen_tx_process(
@@ -59,8 +79,19 @@ static uint16_t tgen_tx_process(
 
 	gen = 0;
 	for (uint16_t i = 0; i < n; i++) {
-		struct tgen_flow_priv *flow = ctx->flows[ctx->rr];
-		struct rte_mbuf *m = rte_pktmbuf_clone(flow->template, ctx->pool);
+		struct tgen_tx_flow *tf = &ctx->flows[ctx->rr];
+		struct tgen_flow_priv *flow = tf->priv;
+		struct rte_mbuf *m;
+
+		if (flow->n_sweeps == 0) {
+			// no mutation: share the template data by reference
+			m = rte_pktmbuf_clone(flow->template, ctx->pool);
+		} else {
+			// mutation needs a writable packet
+			m = rte_pktmbuf_copy(flow->template, ctx->pool, 0, UINT32_MAX);
+			if (likely(m != NULL))
+				tgen_apply_sweeps(m, flow, tf->cursors);
+		}
 		if (unlikely(m == NULL))
 			break;
 		if (++ctx->rr >= ctx->n_flows)
@@ -81,6 +112,8 @@ static uint16_t tgen_tx_process(
 static void tgen_tx_fini(const struct rte_graph *, struct rte_node *node) {
 	struct tgen_tx_ctx *ctx = node->ctx_ptr;
 	if (ctx != NULL) {
+		for (unsigned i = 0; i < ctx->n_flows; i++)
+			rte_free(ctx->flows[i].cursors);
 		rte_free(ctx->flows);
 		rte_free(ctx);
 		node->ctx_ptr = NULL;

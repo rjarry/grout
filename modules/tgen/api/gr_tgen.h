@@ -21,6 +21,10 @@ enum gr_tgen_requests : uint32_t {
 	GR_TGEN_FLOW_LIST,
 	GR_TGEN_START,
 	GR_TGEN_STOP,
+	GR_TGEN_SWEEP_ADD,
+	GR_TGEN_SWEEP_DEL,
+	GR_TGEN_SWEEP_CLEAR,
+	GR_TGEN_SWEEP_LIST,
 };
 
 // Rate specification modes.
@@ -88,3 +92,41 @@ struct gr_tgen_flow {
 };
 
 GR_REQ_STREAM(GR_TGEN_FLOW_LIST, struct gr_empty, struct gr_tgen_flow);
+
+// Incrementally mutate a packet field to spread traffic across RX queues (RSS).
+// The field is `size` bytes at `offset` in the frame, written big-endian, cycling
+// over [start, end] by `step` on every transmitted packet.
+struct gr_tgen_sweep_add_req {
+	uint32_t flow_id;
+	uint16_t offset;
+	uint16_t size; // field width in bytes, 1 to 8
+	uint64_t start;
+	uint64_t end;
+	uint64_t step;
+};
+
+struct gr_tgen_sweep_add_resp {
+	uint32_t sweep_id;
+};
+
+GR_REQ(GR_TGEN_SWEEP_ADD, struct gr_tgen_sweep_add_req, struct gr_tgen_sweep_add_resp);
+
+struct gr_tgen_sweep_del_req {
+	uint32_t sweep_id;
+};
+
+GR_REQ(GR_TGEN_SWEEP_DEL, struct gr_tgen_sweep_del_req, struct gr_empty);
+
+GR_REQ(GR_TGEN_SWEEP_CLEAR, struct gr_empty, struct gr_empty);
+
+struct gr_tgen_sweep {
+	uint32_t id;
+	uint32_t flow_id;
+	uint16_t offset;
+	uint16_t size;
+	uint64_t start;
+	uint64_t end;
+	uint64_t step;
+};
+
+GR_REQ_STREAM(GR_TGEN_SWEEP_LIST, struct gr_empty, struct gr_tgen_sweep);

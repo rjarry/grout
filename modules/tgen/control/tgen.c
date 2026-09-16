@@ -49,6 +49,47 @@ static vec struct tgen_flow **flows;
 static uint32_t next_flow_id = 1;
 static struct rte_mempool *tgen_pool;
 
+struct tgen_sweep_entry {
+	uint32_t id;
+	uint32_t flow_id;
+	struct tgen_sweep cfg;
+};
+
+static vec struct tgen_sweep_entry **sweeps;
+static uint32_t next_sweep_id = 1;
+
+static struct tgen_flow *flow_find(uint32_t id) {
+	vec_foreach (struct tgen_flow *f, flows)
+		if (f->id == id)
+			return f;
+	return NULL;
+}
+
+// Rebuild the flat sweep array the datapath reads for a flow from the control
+// plane registry.
+static void flow_sweeps_rebuild(struct tgen_flow *f) {
+	unsigned n = 0;
+
+	rte_free(f->priv.sweeps);
+	f->priv.sweeps = NULL;
+	f->priv.n_sweeps = 0;
+
+	vec_foreach (struct tgen_sweep_entry *e, sweeps)
+		if (e->flow_id == f->id)
+			n++;
+	if (n == 0)
+		return;
+
+	f->priv.sweeps = rte_malloc(__func__, n * sizeof(*f->priv.sweeps), 0);
+	if (f->priv.sweeps == NULL) {
+		LOG(ERR, "rte_malloc(tgen sweeps) failed");
+		return;
+	}
+	vec_foreach (struct tgen_sweep_entry *e, sweeps)
+		if (e->flow_id == f->id)
+			f->priv.sweeps[f->priv.n_sweeps++] = e->cfg;
+}
+
 // current rate request, replayed on reloads while running
 static gr_tgen_rate_mode_t rate_mode;
 static double rate_value;
@@ -241,15 +282,31 @@ static void tgen_tx_ctx_set(const char *graph, uint16_t port_id, uint16_t queue_
 		if (f->tx_port_id == port_id)
 			n++;
 	if (n > 0) {
-		ctx->flows = rte_malloc(__func__, n * sizeof(*ctx->flows), RTE_CACHE_LINE_SIZE);
+		ctx->flows = rte_zmalloc(__func__, n * sizeof(*ctx->flows), RTE_CACHE_LINE_SIZE);
 		if (ctx->flows == NULL) {
 			LOG(ERR, "rte_malloc(tgen flows) failed");
 			rte_free(ctx);
 			return;
 		}
-		vec_foreach (struct tgen_flow *f, flows)
-			if (f->tx_port_id == port_id)
-				ctx->flows[ctx->n_flows++] = &f->priv;
+		vec_foreach (struct tgen_flow *f, flows) {
+			if (f->tx_port_id != port_id)
+				continue;
+			struct tgen_tx_flow *tf = &ctx->flows[ctx->n_flows++];
+			tf->priv = &f->priv;
+			if (f->priv.n_sweeps > 0) {
+				tf->cursors = rte_malloc(
+					__func__,
+					f->priv.n_sweeps * sizeof(*tf->cursors),
+					RTE_CACHE_LINE_SIZE
+				);
+				if (tf->cursors == NULL) {
+					LOG(ERR, "rte_malloc(tgen cursors) failed");
+					continue;
+				}
+				for (unsigned s = 0; s < f->priv.n_sweeps; s++)
+					tf->cursors[s] = f->priv.sweeps[s].start;
+			}
+		}
 	}
 	node->ctx_ptr = ctx;
 }
@@ -467,8 +524,21 @@ static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	return api_out(0, sizeof(*resp), resp);
 }
 
+// Remove all sweep entries attached to a flow.
+static void flow_sweeps_drop(uint32_t flow_id) {
+	for (unsigned i = 0; i < vec_len(sweeps);) {
+		if (sweeps[i]->flow_id == flow_id) {
+			free(sweeps[i]);
+			vec_del(sweeps, i);
+		} else {
+			i++;
+		}
+	}
+}
+
 static void flow_free(struct tgen_flow *flow) {
 	rte_pktmbuf_free(flow->priv.template);
+	rte_free(flow->priv.sweeps);
 	free(flow);
 }
 
@@ -487,6 +557,8 @@ static struct api_out tgen_flow_del(const void *request, struct api_ctx *) {
 	if (flow == NULL)
 		return api_out(ENOENT, 0, NULL);
 
+	flow_sweeps_drop(flow->id);
+
 	// rebuild all graphs so no worker references the flow before freeing it
 	if ((ret = tgen_reload()) < 0)
 		LOG(ERR, "tgen_reload after flow del: %s", strerror(-ret));
@@ -502,6 +574,10 @@ static struct api_out tgen_flow_clear(const void * /*request*/, struct api_ctx *
 
 	flows = NULL;
 	atomic_store(&tgen_run.running, false);
+
+	vec_foreach (struct tgen_sweep_entry *e, sweeps)
+		free(e);
+	vec_free(sweeps);
 
 	if ((ret = tgen_reload()) < 0)
 		LOG(ERR, "tgen_reload after flow clear: %s", strerror(-ret));
@@ -526,6 +602,115 @@ static struct api_out tgen_flow_list(const void * /*request*/, struct api_ctx *c
 	return api_out(0, 0, NULL);
 }
 
+static struct api_out tgen_sweep_add(const void *request, struct api_ctx *) {
+	const struct gr_tgen_sweep_add_req *req = request;
+	struct gr_tgen_sweep_add_resp *resp;
+	struct tgen_sweep_entry *entry;
+	struct tgen_flow *flow;
+	int ret;
+
+	flow = flow_find(req->flow_id);
+	if (flow == NULL)
+		return api_out(ENOENT, 0, NULL);
+	if (req->size < 1 || req->size > 8)
+		return api_out(EINVAL, 0, NULL);
+	if ((uint32_t)req->offset + req->size > flow->priv.pkt_len)
+		return api_out(ERANGE, 0, NULL);
+	if (req->end < req->start || req->step == 0)
+		return api_out(EINVAL, 0, NULL);
+	// a size < 8 field cannot hold values above its width
+	if (req->size < 8 && req->end > (UINT64_C(1) << (8 * req->size)) - 1)
+		return api_out(ERANGE, 0, NULL);
+
+	entry = calloc(1, sizeof(*entry));
+	if (entry == NULL)
+		return api_out(ENOMEM, 0, NULL);
+	entry->id = next_sweep_id++;
+	entry->flow_id = flow->id;
+	entry->cfg = (struct tgen_sweep) {
+		.offset = req->offset,
+		.size = req->size,
+		.start = req->start,
+		.end = req->end,
+		.step = req->step,
+	};
+	vec_add(sweeps, entry);
+
+	flow_sweeps_rebuild(flow);
+	if ((ret = tgen_reload()) < 0) {
+		vec_pop(sweeps);
+		free(entry);
+		flow_sweeps_rebuild(flow);
+		return api_out(-ret, 0, NULL);
+	}
+
+	resp = calloc(1, sizeof(*resp));
+	if (resp == NULL)
+		return api_out(ENOMEM, 0, NULL);
+	resp->sweep_id = entry->id;
+
+	return api_out(0, sizeof(*resp), resp);
+}
+
+static struct api_out tgen_sweep_del(const void *request, struct api_ctx *) {
+	const struct gr_tgen_sweep_del_req *req = request;
+	struct tgen_sweep_entry *entry = NULL;
+	struct tgen_flow *flow;
+	int ret;
+
+	for (unsigned i = 0; i < vec_len(sweeps); i++) {
+		if (sweeps[i]->id == req->sweep_id) {
+			entry = sweeps[i];
+			vec_del(sweeps, i);
+			break;
+		}
+	}
+	if (entry == NULL)
+		return api_out(ENOENT, 0, NULL);
+
+	flow = flow_find(entry->flow_id);
+	if (flow != NULL)
+		flow_sweeps_rebuild(flow);
+	free(entry);
+
+	if ((ret = tgen_reload()) < 0)
+		LOG(ERR, "tgen_reload after sweep del: %s", strerror(-ret));
+
+	return api_out(0, 0, NULL);
+}
+
+static struct api_out tgen_sweep_clear(const void * /*request*/, struct api_ctx *) {
+	int ret;
+
+	vec_foreach (struct tgen_sweep_entry *e, sweeps)
+		free(e);
+	vec_free(sweeps);
+
+	vec_foreach (struct tgen_flow *f, flows)
+		flow_sweeps_rebuild(f);
+
+	if ((ret = tgen_reload()) < 0)
+		LOG(ERR, "tgen_reload after sweep clear: %s", strerror(-ret));
+
+	return api_out(0, 0, NULL);
+}
+
+static struct api_out tgen_sweep_list(const void * /*request*/, struct api_ctx *ctx) {
+	vec_foreach (struct tgen_sweep_entry *e, sweeps) {
+		struct gr_tgen_sweep g = {
+			.id = e->id,
+			.flow_id = e->flow_id,
+			.offset = e->cfg.offset,
+			.size = e->cfg.size,
+			.start = e->cfg.start,
+			.end = e->cfg.end,
+			.step = e->cfg.step,
+		};
+		api_send(ctx, sizeof(g), &g);
+	}
+	return api_out(0, 0, NULL);
+}
+
 static struct module tgen_module = {
 	.name = "tgen",
 	.depends_on = "infra",
@@ -540,6 +725,10 @@ RTE_INIT(tgen_control_init) {
 	api_handler(GR_TGEN_FLOW_LIST, tgen_flow_list);
 	api_handler(GR_TGEN_START, tgen_start);
 	api_handler(GR_TGEN_STOP, tgen_stop);
+	api_handler(GR_TGEN_SWEEP_ADD, tgen_sweep_add);
+	api_handler(GR_TGEN_SWEEP_DEL, tgen_sweep_del);
+	api_handler(GR_TGEN_SWEEP_CLEAR, tgen_sweep_clear);
+	api_handler(GR_TGEN_SWEEP_LIST, tgen_sweep_list);
 	worker_graph_builder_register(&tgen_builder);
 	module_register(&tgen_module);
 }

@@ -19,6 +19,7 @@
 
 #define TGEN_CTX(root) CLI_CONTEXT(root, CTX_ARG("tgen", "Stateless traffic generator."))
 #define FLOW_CTX(root) CLI_CONTEXT(TGEN_CTX(root), CTX_ARG("flow", "Traffic flows."))
+#define SWEEP_CTX(root) CLI_CONTEXT(TGEN_CTX(root), CTX_ARG("sweep", "Packet field sweeps."))
 
 // Read the first ethernet frame from a pcap file into a freshly allocated
 // buffer. Supports both microsecond and nanosecond pcap variants in either
@@ -171,6 +172,87 @@ static cmd_status_t tgen_flow_show(struct gr_api_client *c, const struct ec_pnod
 	return CMD_SUCCESS;
 }
 
+static cmd_status_t tgen_sweep_add(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_tgen_sweep_add_req req = {.step = 1};
+	const struct gr_tgen_sweep_add_resp *resp;
+	void *resp_ptr = NULL;
+	uint64_t step;
+
+	if (arg_u32(p, "FLOW", &req.flow_id) < 0)
+		return CMD_ERROR;
+	if (arg_u16(p, "OFF", &req.offset) < 0)
+		return CMD_ERROR;
+	if (arg_u16(p, "SIZE", &req.size) < 0)
+		return CMD_ERROR;
+	if (arg_u64(p, "START", &req.start) < 0)
+		return CMD_ERROR;
+	if (arg_u64(p, "END", &req.end) < 0)
+		return CMD_ERROR;
+	if (arg_u64(p, "STEP", &step) < 0) {
+		if (errno != ENOENT)
+			return CMD_ERROR;
+	} else {
+		req.step = step;
+	}
+
+	if (gr_api_client_send_recv(c, GR_TGEN_SWEEP_ADD, sizeof(req), &req, &resp_ptr) < 0)
+		return CMD_ERROR;
+
+	resp = resp_ptr;
+	printf("Created sweep %u\n", resp->sweep_id);
+	free(resp_ptr);
+
+	return CMD_SUCCESS;
+}
+
+static cmd_status_t tgen_sweep_del(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_tgen_sweep_del_req req = {0};
+
+	if (arg_u32(p, "ID", &req.sweep_id) < 0)
+		return CMD_ERROR;
+	if (gr_api_client_send_recv(c, GR_TGEN_SWEEP_DEL, sizeof(req), &req, NULL) < 0)
+		return CMD_ERROR;
+	return CMD_SUCCESS;
+}
+
+static cmd_status_t tgen_sweep_clear(struct gr_api_client *c, const struct ec_pnode *) {
+	if (gr_api_client_send_recv(c, GR_TGEN_SWEEP_CLEAR, 0, NULL, NULL) < 0)
+		return CMD_ERROR;
+	return CMD_SUCCESS;
+}
+
+static cmd_status_t tgen_sweep_show(struct gr_api_client *c, const struct ec_pnode *) {
+	const struct gr_tgen_sweep *sw;
+	struct gr_table *t;
+	int ret;
+
+	t = gr_table_new();
+	gr_table_column(t, "ID", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "FLOW", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "OFFSET", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "SIZE", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "START", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "END", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "STEP", GR_DISP_RIGHT | GR_DISP_INT);
+
+	gr_api_client_stream_foreach (sw, ret, c, GR_TGEN_SWEEP_LIST, 0, NULL) {
+		gr_table_cell(t, 0, "%u", sw->id);
+		gr_table_cell(t, 1, "%u", sw->flow_id);
+		gr_table_cell(t, 2, "%u", sw->offset);
+		gr_table_cell(t, 3, "%u", sw->size);
+		gr_table_cell(t, 4, "%lu", sw->start);
+		gr_table_cell(t, 5, "%lu", sw->end);
+		gr_table_cell(t, 6, "%lu", sw->step);
+		gr_table_print_row(t);
+	}
+	gr_table_free(t);
+
+	if (ret < 0)
+		return CMD_ERROR;
+
+	return CMD_SUCCESS;
+}
+
 static cmd_status_t tgen_start(struct gr_api_client *c, const struct ec_pnode *p) {
 	struct gr_tgen_start_req req = {0};
 	const char *rate;
@@ -283,6 +365,39 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 
 	ret = CLI_COMMAND(FLOW_CTX(root), "[show]", tgen_flow_show, "List traffic flows.");
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(
+		SWEEP_CTX(root),
+		"add flow FLOW offset OFF start START end END size SIZE [step STEP]",
+		tgen_sweep_add,
+		"Add a field sweep to a flow.",
+		with_help("Flow ID.", ec_node_uint("FLOW", 1, UINT32_MAX, 10)),
+		with_help("Field offset in the frame.", ec_node_uint("OFF", 0, UINT16_MAX, 10)),
+		with_help("First value (inclusive).", ec_node_uint("START", 0, UINT32_MAX, 10)),
+		with_help("Last value (inclusive).", ec_node_uint("END", 0, UINT32_MAX, 10)),
+		with_help("Field width in bytes (1-8).", ec_node_uint("SIZE", 1, 8, 10)),
+		with_help("Increment (default 1).", ec_node_uint("STEP", 1, UINT32_MAX, 10))
+	);
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(
+		SWEEP_CTX(root),
+		"del ID",
+		tgen_sweep_del,
+		"Delete a field sweep.",
+		with_help("Sweep ID.", ec_node_uint("ID", 1, UINT32_MAX, 10))
+	);
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(SWEEP_CTX(root), "clear", tgen_sweep_clear, "Delete all field sweeps.");
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(SWEEP_CTX(root), "[show]", tgen_sweep_show, "List field sweeps.");
 	if (ret < 0)
 		return ret;
 
