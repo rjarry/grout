@@ -195,6 +195,43 @@ static void baseline_reset(void) {
 	}
 }
 
+struct run_counters {
+	uint64_t tx_packets;
+	uint64_t tx_bytes;
+	uint64_t rx_packets;
+	uint64_t rx_bytes;
+	uint64_t rx_missed;
+	uint64_t drop_packets;
+};
+
+// Aggregate the per-run hardware counters over the distinct transmit and receive
+// ports of all flows. imissed is added back to the received count so a saturated
+// receive queue is not mistaken for a drop caused by the device under test.
+static void run_counters_get(struct run_counters *c) {
+	bool tx_seen[RTE_MAX_ETHPORTS] = {0};
+	bool rx_seen[RTE_MAX_ETHPORTS] = {0};
+	struct rte_eth_stats s;
+
+	memset(c, 0, sizeof(*c));
+
+	vec_foreach (struct tgen_flow *f, flows) {
+		if (!tx_seen[f->tx_port_id] && rte_eth_stats_get(f->tx_port_id, &s) == 0) {
+			tx_seen[f->tx_port_id] = true;
+			c->tx_packets += s.opackets - baseline[f->tx_port_id].opackets;
+			c->tx_bytes += s.obytes - baseline[f->tx_port_id].obytes;
+		}
+		if (!rx_seen[f->rx_port_id] && rte_eth_stats_get(f->rx_port_id, &s) == 0) {
+			rx_seen[f->rx_port_id] = true;
+			c->rx_packets += s.ipackets - baseline[f->rx_port_id].ipackets;
+			c->rx_bytes += s.ibytes - baseline[f->rx_port_id].ibytes;
+			c->rx_missed += s.imissed - baseline[f->rx_port_id].imissed;
+		}
+	}
+
+	if (c->tx_packets > c->rx_packets + c->rx_missed)
+		c->drop_packets = c->tx_packets - (c->rx_packets + c->rx_missed);
+}
+
 static int resolve_port(uint16_t iface_id, uint16_t *port_id) {
 	struct iface *iface = iface_from_id(iface_id);
 	if (iface == NULL)
@@ -385,13 +422,124 @@ static const struct worker_graph_builder tgen_builder = {
 	.build = tgen_graph_build,
 };
 
+// RFC2544 no-drop-rate binary search, driven by a libevent timer
+
+#define RFC2544_DEFAULT_ITER 10
+#define RFC2544_DEFAULT_DURATION 2.0
+#define RFC2544_RATE_EPSILON 0.1 // stop once the rate interval is this narrow (%)
+
+static struct event_base *tgen_base;
+
+static struct rfc2544 {
+	bool active;
+	unsigned iter;
+	unsigned max_iter;
+	double low; // highest known passing rate (percent)
+	double high; // lowest known failing rate (percent)
+	double cur; // rate under test
+	double best; // best passing rate found, -1 if none
+	double max_drop_pct;
+	struct timeval duration;
+	struct event *timer;
+} rfc;
+
+static void rfc_finish(void) {
+	atomic_store(&tgen_run.running, false);
+	rfc.active = false;
+	LOG(NOTICE, "rfc2544: done after %u iterations, NDR=%.3f%%", rfc.iter, rfc.best);
+}
+
+static void rfc_start_iteration(void) {
+	rfc.cur = (rfc.low + rfc.high) / 2.0;
+	rate_mode = GR_TGEN_RATE_PCT;
+	rate_value = rfc.cur;
+	rate_only_port = -1;
+
+	if (rate_apply() < 0) {
+		LOG(ERR, "rfc2544: rate_apply failed, aborting");
+		rfc_finish();
+		return;
+	}
+	baseline_reset();
+	atomic_store(&tgen_run.running, true);
+	if (event_add(rfc.timer, &rfc.duration) < 0) {
+		LOG(ERR, "rfc2544: event_add failed, aborting");
+		rfc_finish();
+	}
+}
+
+static void rfc_iteration_done(evutil_socket_t, short, void *) {
+	struct run_counters c;
+	double drop_pct;
+
+	atomic_store(&tgen_run.running, false);
+	run_counters_get(&c);
+	drop_pct = c.tx_packets > 0 ? 100.0 * (double)c.drop_packets / (double)c.tx_packets : 100.0;
+
+	if (drop_pct <= rfc.max_drop_pct) {
+		rfc.best = rfc.cur;
+		rfc.low = rfc.cur; // passed: aim higher
+	} else {
+		rfc.high = rfc.cur; // failed: aim lower
+	}
+	rfc.iter++;
+
+	LOG(INFO,
+	    "rfc2544: iteration %u rate=%.3f%% drop=%.6f%% best=%.3f%%",
+	    rfc.iter,
+	    rfc.cur,
+	    drop_pct,
+	    rfc.best);
+
+	if (rfc.iter >= rfc.max_iter || (rfc.high - rfc.low) < RFC2544_RATE_EPSILON) {
+		rfc_finish();
+		return;
+	}
+	rfc_start_iteration();
+}
+
+static struct api_out tgen_rfc2544(const void *request, struct api_ctx *) {
+	const struct gr_tgen_rfc2544_req *req = request;
+	double dur;
+
+	if (vec_len(flows) == 0)
+		return api_out(ENOENT, 0, NULL);
+	if (atomic_load(&tgen_run.running) || rfc.active)
+		return api_out(EBUSY, 0, NULL);
+	if (req->max_drop < 0)
+		return api_out(EINVAL, 0, NULL);
+
+	rfc.max_iter = req->max_iterations != 0 ? req->max_iterations : RFC2544_DEFAULT_ITER;
+	rfc.max_drop_pct = req->max_drop;
+	dur = req->duration > 0 ? req->duration : RFC2544_DEFAULT_DURATION;
+	rfc.duration.tv_sec = (time_t)dur;
+	rfc.duration.tv_usec = (suseconds_t)((dur - (double)rfc.duration.tv_sec) * 1e6);
+	rfc.low = 0;
+	rfc.high = 100;
+	rfc.best = -1;
+	rfc.iter = 0;
+	rfc.active = true;
+
+	if (rfc.timer == NULL) {
+		rfc.timer = evtimer_new(tgen_base, rfc_iteration_done, NULL);
+		if (rfc.timer == NULL) {
+			rfc.active = false;
+			return api_out(ENOMEM, 0, NULL);
+		}
+	}
+
+	rfc_start_iteration();
+	if (!rfc.active)
+		return api_out(EIO, 0, NULL);
+
+	return api_out(0, 0, NULL);
+}
+
 // API handlers
 
 static struct api_out tgen_status(const void * /*request*/, struct api_ctx *) {
-	bool tx_seen[RTE_MAX_ETHPORTS] = {0};
-	bool rx_seen[RTE_MAX_ETHPORTS] = {0};
 	struct gr_tgen_status_resp *resp;
-	struct rte_eth_stats s;
+	struct run_counters c;
 
 	resp = calloc(1, sizeof(*resp));
 	if (resp == NULL)
@@ -402,22 +550,17 @@ static struct api_out tgen_status(const void * /*request*/, struct api_ctx *) {
 	resp->rate_value = rate_value;
 	resp->pps_per_clone = atomic_load(&tgen_run.pps_per_clone);
 
-	vec_foreach (struct tgen_flow *f, flows) {
-		if (!tx_seen[f->tx_port_id] && rte_eth_stats_get(f->tx_port_id, &s) == 0) {
-			tx_seen[f->tx_port_id] = true;
-			resp->tx_packets += s.opackets - baseline[f->tx_port_id].opackets;
-			resp->tx_bytes += s.obytes - baseline[f->tx_port_id].obytes;
-		}
-		if (!rx_seen[f->rx_port_id] && rte_eth_stats_get(f->rx_port_id, &s) == 0) {
-			rx_seen[f->rx_port_id] = true;
-			resp->rx_packets += s.ipackets - baseline[f->rx_port_id].ipackets;
-			resp->rx_bytes += s.ibytes - baseline[f->rx_port_id].ibytes;
-			resp->rx_missed += s.imissed - baseline[f->rx_port_id].imissed;
-		}
-	}
+	run_counters_get(&c);
+	resp->tx_packets = c.tx_packets;
+	resp->tx_bytes = c.tx_bytes;
+	resp->rx_packets = c.rx_packets;
+	resp->rx_bytes = c.rx_bytes;
+	resp->rx_missed = c.rx_missed;
+	resp->drop_packets = c.drop_packets;
 
-	if (resp->tx_packets > resp->rx_packets + resp->rx_missed)
-		resp->drop_packets = resp->tx_packets - (resp->rx_packets + resp->rx_missed);
+	resp->rfc2544_active = rfc.active;
+	resp->rfc2544_iteration = rfc.iter;
+	resp->rfc2544_ndr = rfc.best;
 
 	return api_out(0, sizeof(*resp), resp);
 }
@@ -429,6 +572,8 @@ static struct api_out tgen_start(const void *request, struct api_ctx *) {
 
 	if (vec_len(flows) == 0)
 		return api_out(ENOENT, 0, NULL);
+	if (rfc.active)
+		return api_out(EBUSY, 0, NULL);
 	if (req->rate_mode != GR_TGEN_RATE_PCT && req->rate_mode != GR_TGEN_RATE_PPS)
 		return api_out(EINVAL, 0, NULL);
 	if (req->rate_value <= 0)
@@ -711,13 +856,19 @@ static struct api_out tgen_sweep_list(const void * /*request*/, struct api_ctx *
 	return api_out(0, 0, NULL);
 }
 
+static void tgen_control_start(struct event_base *base) {
+	tgen_base = base;
+	rfc.best = -1;
+	atomic_store(&tgen_run.only_port, -1);
+}
+
 static struct module tgen_module = {
 	.name = "tgen",
 	.depends_on = "infra",
+	.init = tgen_control_start,
 };
 
 RTE_INIT(tgen_control_init) {
-	atomic_store(&tgen_run.only_port, -1);
 	api_handler(GR_TGEN_STATUS, tgen_status);
 	api_handler(GR_TGEN_FLOW_ADD, tgen_flow_add);
 	api_handler(GR_TGEN_FLOW_DEL, tgen_flow_del);
@@ -729,6 +880,7 @@ RTE_INIT(tgen_control_init) {
 	api_handler(GR_TGEN_SWEEP_DEL, tgen_sweep_del);
 	api_handler(GR_TGEN_SWEEP_CLEAR, tgen_sweep_clear);
 	api_handler(GR_TGEN_SWEEP_LIST, tgen_sweep_list);
+	api_handler(GR_TGEN_RFC2544, tgen_rfc2544);
 	worker_graph_builder_register(&tgen_builder);
 	module_register(&tgen_module);
 }

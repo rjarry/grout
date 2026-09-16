@@ -25,6 +25,7 @@ enum gr_tgen_requests : uint32_t {
 	GR_TGEN_SWEEP_DEL,
 	GR_TGEN_SWEEP_CLEAR,
 	GR_TGEN_SWEEP_LIST,
+	GR_TGEN_RFC2544,
 };
 
 // Rate specification modes.
@@ -44,6 +45,10 @@ struct gr_tgen_status_resp {
 	uint64_t rx_bytes;
 	uint64_t rx_missed;
 	uint64_t drop_packets; // tx_packets - (rx_packets + rx_missed), floored at 0
+	// RFC2544 binary search progress
+	bool rfc2544_active;
+	uint32_t rfc2544_iteration;
+	double rfc2544_ndr; // best no-drop rate (percent), -1 if none found
 };
 
 GR_REQ(GR_TGEN_STATUS, struct gr_empty, struct gr_tgen_status_resp);
@@ -130,3 +135,13 @@ struct gr_tgen_sweep {
 };
 
 GR_REQ_STREAM(GR_TGEN_SWEEP_LIST, struct gr_empty, struct gr_tgen_sweep);
+
+// Kick off a standalone RFC2544 no-drop-rate binary search. The daemon runs the
+// search asynchronously; poll GR_TGEN_STATUS for progress and the result.
+struct gr_tgen_rfc2544_req {
+	uint32_t max_iterations; // 0 for the default
+	double max_drop; // acceptable drop percentage (0 for strict no-drop)
+	double duration; // seconds per iteration (0 for the default)
+};
+
+GR_REQ(GR_TGEN_RFC2544, struct gr_tgen_rfc2544_req, struct gr_empty);

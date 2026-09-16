@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define TGEN_CTX(root) CLI_CONTEXT(root, CTX_ARG("tgen", "Stateless traffic generator."))
 #define FLOW_CTX(root) CLI_CONTEXT(TGEN_CTX(root), CTX_ARG("flow", "Traffic flows."))
@@ -296,6 +297,52 @@ static cmd_status_t tgen_stop(struct gr_api_client *c, const struct ec_pnode *) 
 	return CMD_SUCCESS;
 }
 
+static cmd_status_t tgen_rfc2544(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_tgen_rfc2544_req req = {0};
+	const char *s;
+	uint32_t it = 0;
+
+	if (arg_u32(p, "ITER", &it) < 0) {
+		if (errno != ENOENT)
+			return CMD_ERROR;
+	} else {
+		req.max_iterations = it;
+	}
+	if ((s = arg_str(p, "MAXDROP")) != NULL)
+		req.max_drop = strtod(s, NULL);
+	if ((s = arg_str(p, "DUR")) != NULL)
+		req.duration = strtod(s, NULL);
+
+	if (gr_api_client_send_recv(c, GR_TGEN_RFC2544, sizeof(req), &req, NULL) < 0)
+		return CMD_ERROR;
+
+	// the search runs in the daemon, poll its status until it completes
+	for (;;) {
+		const struct gr_tgen_status_resp *st;
+		void *resp_ptr = NULL;
+		bool active;
+		double ndr;
+		uint32_t iter;
+
+		usleep(500000);
+		if (gr_api_client_send_recv(c, GR_TGEN_STATUS, 0, NULL, &resp_ptr) < 0)
+			return CMD_ERROR;
+		st = resp_ptr;
+		active = st->rfc2544_active;
+		ndr = st->rfc2544_ndr;
+		iter = st->rfc2544_iteration;
+		free(resp_ptr);
+
+		if (!active) {
+			if (ndr < 0)
+				printf("no no-drop rate found after %u iterations\n", iter);
+			else
+				printf("no-drop rate: %.3f%% (%u iterations)\n", ndr, iter);
+			return CMD_SUCCESS;
+		}
+	}
+}
+
 static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *) {
 	const struct gr_tgen_status_resp *resp;
 	void *resp_ptr = NULL;
@@ -420,6 +467,27 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 
 	ret = CLI_COMMAND(TGEN_CTX(root), "stop", tgen_stop, "Stop generating traffic.");
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(
+		TGEN_CTX(root),
+		"rfc2544 (max_iterations ITER),(max_drop MAXDROP),(duration DUR)",
+		tgen_rfc2544,
+		"Run an RFC2544 no-drop-rate binary search.",
+		with_help(
+			"Maximum number of iterations (default 10).",
+			ec_node_uint("ITER", 1, UINT32_MAX, 10)
+		),
+		with_help(
+			"Acceptable drop percentage (e.g. 0.0001%).",
+			ec_node_re("MAXDROP", "[0-9]+(\\.[0-9]+)?%?")
+		),
+		with_help(
+			"Seconds per iteration (default 2).",
+			ec_node_re("DUR", "[0-9]+(\\.[0-9]+)?")
+		)
+	);
 	if (ret < 0)
 		return ret;
 
