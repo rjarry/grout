@@ -53,7 +53,7 @@ static uint16_t tgen_tx_process(
 	uint64_t now, hz;
 	double pps;
 
-	if (ctx == NULL || ctx->n_flows == 0)
+	if (ctx == NULL || ctx->n_flows == 0 || ctx->sched_len == 0)
 		return 0;
 	if (!atomic_load_explicit(&tgen_run.running, memory_order_relaxed))
 		return 0;
@@ -79,7 +79,7 @@ static uint16_t tgen_tx_process(
 
 	gen = 0;
 	for (uint16_t i = 0; i < n; i++) {
-		struct tgen_tx_flow *tf = &ctx->flows[ctx->rr];
+		struct tgen_tx_flow *tf = &ctx->flows[ctx->sched[ctx->rr]];
 		struct tgen_flow_priv *flow = tf->priv;
 		struct rte_mbuf *m;
 
@@ -94,7 +94,7 @@ static uint16_t tgen_tx_process(
 		}
 		if (unlikely(m == NULL))
 			break;
-		if (++ctx->rr >= ctx->n_flows)
+		if (++ctx->rr >= ctx->sched_len)
 			ctx->rr = 0;
 		mbufs[gen++] = m;
 	}
@@ -115,6 +115,7 @@ static void tgen_tx_fini(const struct rte_graph *, struct rte_node *node) {
 		for (unsigned i = 0; i < ctx->n_flows; i++)
 			rte_free(ctx->flows[i].cursors);
 		rte_free(ctx->flows);
+		rte_free(ctx->sched);
 		rte_free(ctx);
 		node->ctx_ptr = NULL;
 	}

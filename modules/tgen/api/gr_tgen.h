@@ -79,6 +79,7 @@ struct gr_tgen_flow_add_req {
 	uint16_t tx_iface_id;
 	uint16_t rx_iface_id;
 	gr_tgen_pkt_format_t format;
+	uint16_t weight; // relative share among flows on the same tx port (>=1)
 	uint16_t pkt_len;
 	uint8_t pkt[/* pkt_len */];
 };
@@ -102,6 +103,7 @@ struct gr_tgen_flow {
 	uint16_t tx_iface_id;
 	uint16_t rx_iface_id;
 	uint16_t pkt_len;
+	uint16_t weight;
 };
 
 GR_REQ_STREAM(GR_TGEN_FLOW_LIST, struct gr_empty, struct gr_tgen_flow);

@@ -46,6 +46,7 @@ struct tgen_flow {
 	uint16_t rx_iface_id;
 	uint16_t tx_port_id;
 	uint16_t rx_port_id;
+	uint16_t weight;
 	struct tgen_flow_priv priv;
 };
 
@@ -318,36 +319,50 @@ static void tgen_tx_ctx_set(const char *graph, uint16_t port_id, uint16_t queue_
 	ctx->pool = tgen_pool;
 	ctx->last_tsc = rte_get_tsc_cycles();
 
-	unsigned n = 0;
-	vec_foreach (struct tgen_flow *f, flows)
-		if (f->tx_port_id == port_id)
+	unsigned n = 0, total_weight = 0;
+	vec_foreach (struct tgen_flow *f, flows) {
+		if (f->tx_port_id == port_id) {
 			n++;
-	if (n > 0) {
-		ctx->flows = rte_zmalloc(__func__, n * sizeof(*ctx->flows), RTE_CACHE_LINE_SIZE);
-		if (ctx->flows == NULL) {
-			LOG(ERR, "rte_malloc(tgen flows) failed");
-			rte_free(ctx);
-			return;
+			total_weight += f->weight;
 		}
-		vec_foreach (struct tgen_flow *f, flows) {
-			if (f->tx_port_id != port_id)
-				continue;
-			struct tgen_tx_flow *tf = &ctx->flows[ctx->n_flows++];
-			tf->priv = &f->priv;
-			if (f->priv.n_sweeps > 0) {
-				tf->cursors = rte_malloc(
-					__func__,
-					f->priv.n_sweeps * sizeof(*tf->cursors),
-					RTE_CACHE_LINE_SIZE
-				);
-				if (tf->cursors == NULL) {
-					LOG(ERR, "rte_malloc(tgen cursors) failed");
-					continue;
-				}
+	}
+	if (n == 0) {
+		node->ctx_ptr = ctx;
+		return;
+	}
+
+	ctx->flows = rte_zmalloc(__func__, n * sizeof(*ctx->flows), RTE_CACHE_LINE_SIZE);
+	ctx->sched = rte_malloc(__func__, total_weight * sizeof(*ctx->sched), RTE_CACHE_LINE_SIZE);
+	if (ctx->flows == NULL || ctx->sched == NULL) {
+		LOG(ERR, "rte_malloc(tgen flows/sched) failed");
+		rte_free(ctx->flows);
+		rte_free(ctx->sched);
+		rte_free(ctx);
+		return;
+	}
+
+	vec_foreach (struct tgen_flow *f, flows) {
+		if (f->tx_port_id != port_id)
+			continue;
+		unsigned idx = ctx->n_flows++;
+		struct tgen_tx_flow *tf = &ctx->flows[idx];
+		tf->priv = &f->priv;
+		if (f->priv.n_sweeps > 0) {
+			tf->cursors = rte_malloc(
+				__func__,
+				f->priv.n_sweeps * sizeof(*tf->cursors),
+				RTE_CACHE_LINE_SIZE
+			);
+			if (tf->cursors != NULL) {
 				for (unsigned s = 0; s < f->priv.n_sweeps; s++)
 					tf->cursors[s] = f->priv.sweeps[s].start;
+			} else {
+				LOG(ERR, "rte_malloc(tgen cursors) failed");
 			}
 		}
+		// append this flow to the weighted schedule
+		for (unsigned w = 0; w < f->weight; w++)
+			ctx->sched[ctx->sched_len++] = idx;
 	}
 	node->ctx_ptr = ctx;
 }
@@ -705,6 +720,7 @@ static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	flow->rx_iface_id = req->rx_iface_id;
 	flow->tx_port_id = tx_port;
 	flow->rx_port_id = rx_port;
+	flow->weight = req->weight != 0 ? req->weight : 1;
 	flow->priv.template = m;
 	flow->priv.pkt_len = frame_len;
 	vec_add(flows, flow);
@@ -796,6 +812,7 @@ static struct api_out tgen_flow_list(const void * /*request*/, struct api_ctx *c
 			.tx_iface_id = f->tx_iface_id,
 			.rx_iface_id = f->rx_iface_id,
 			.pkt_len = f->priv.pkt_len,
+			.weight = f->weight,
 		};
 		api_send(ctx, sizeof(g), &g);
 	}

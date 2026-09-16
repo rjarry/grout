@@ -66,7 +66,11 @@ struct tgen_tx_ctx {
 	struct rte_mempool *pool; // pool for the cloned (indirect) mbufs
 	struct tgen_tx_flow *flows; // flows generated out of this port
 	unsigned n_flows;
-	unsigned rr; // round-robin cursor over flows
+	// weighted schedule: sched[i] indexes flows[]; each flow appears weight
+	// times so packets follow the configured ratio (e.g. IMIX). rr walks it.
+	uint16_t *sched;
+	unsigned sched_len;
+	unsigned rr;
 	// token-bucket pacing state
 	uint64_t last_tsc;
 	double tokens;

@@ -128,6 +128,10 @@ static cmd_status_t tgen_flow_add(struct gr_api_client *c, const struct ec_pnode
 
 	req->tx_iface_id = tx_id;
 	req->rx_iface_id = rx_id;
+	if (arg_u16(p, "WEIGHT", &req->weight) < 0 && errno != ENOENT) {
+		free(req);
+		return CMD_ERROR;
+	}
 
 	if (gr_api_client_send_recv(c, GR_TGEN_FLOW_ADD, len, req, &resp_ptr) < 0) {
 		free(req);
@@ -170,12 +174,14 @@ static cmd_status_t tgen_flow_show(struct gr_api_client *c, const struct ec_pnod
 	gr_table_column(t, "TX", GR_DISP_LEFT);
 	gr_table_column(t, "RX", GR_DISP_LEFT);
 	gr_table_column(t, "PKT_LEN", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(t, "WEIGHT", GR_DISP_RIGHT | GR_DISP_INT);
 
 	gr_api_client_stream_foreach (flow, ret, c, GR_TGEN_FLOW_LIST, 0, NULL) {
 		gr_table_cell(t, 0, "%u", flow->id);
 		gr_table_cell(t, 1, "%s", iface_name_from_id(c, flow->tx_iface_id));
 		gr_table_cell(t, 2, "%s", iface_name_from_id(c, flow->rx_iface_id));
 		gr_table_cell(t, 3, "%u", flow->pkt_len);
+		gr_table_cell(t, 4, "%u", flow->weight);
 		gr_table_print_row(t);
 	}
 	gr_table_free(t);
@@ -394,7 +400,7 @@ static int ctx_init(struct ec_node *root) {
 
 	ret = CLI_COMMAND(
 		FLOW_CTX(root),
-		"add tx TX rx RX ((pcap FILE)|(packet EXPR))",
+		"add tx TX rx RX ((pcap FILE)|(packet EXPR)) [weight WEIGHT]",
 		tgen_flow_add,
 		"Add a traffic flow from a pcap file or a scapy-like text template.",
 		with_help(
@@ -409,6 +415,10 @@ static int ctx_init(struct ec_node *root) {
 		with_help(
 			"Scapy-like template, e.g. \"Ether()/IP(dst=1.2.3.4)/UDP(dport=53)\".",
 			ec_node("any", "EXPR")
+		),
+		with_help(
+			"Relative share among flows on the same tx port (default 1, for IMIX).",
+			ec_node_uint("WEIGHT", 1, UINT16_MAX, 10)
 		)
 	);
 	if (ret < 0)
