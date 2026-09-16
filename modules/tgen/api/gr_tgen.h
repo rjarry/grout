@@ -66,11 +66,19 @@ GR_REQ(GR_TGEN_START, struct gr_tgen_start_req, struct gr_empty);
 
 GR_REQ(GR_TGEN_STOP, struct gr_empty, struct gr_empty);
 
+// Template frame representation.
+typedef enum : uint8_t {
+	GR_TGEN_PKT_RAW = 0, // pkt[] holds the frame bytes verbatim (e.g. from pcap)
+	GR_TGEN_PKT_TEXT = 1, // pkt[] holds a NUL-terminated scapy-like expression
+} gr_tgen_pkt_format_t;
+
 // Create a flow transmitting a template frame out of tx_iface and expecting it
-// back on rx_iface. Both must be port interfaces.
+// back on rx_iface. Both must be port interfaces. A text template is forged into
+// frame bytes by the daemon, so the API is usable without grcli.
 struct gr_tgen_flow_add_req {
 	uint16_t tx_iface_id;
 	uint16_t rx_iface_id;
+	gr_tgen_pkt_format_t format;
 	uint16_t pkt_len;
 	uint8_t pkt[/* pkt_len */];
 };

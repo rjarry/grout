@@ -2,9 +2,13 @@
 // Copyright (c) 2026 Robin Jarry
 
 #include "iface.h"
+#include "ip4.h"
+#include "ip6.h"
 #include "log.h"
 #include "mempool.h"
 #include "module.h"
+#include "nexthop.h"
+#include "pktbuild.h"
 #include "port.h"
 #include "tgen.h"
 #include "vec.h"
@@ -606,10 +610,36 @@ static struct api_out tgen_stop(const void * /*request*/, struct api_ctx *) {
 	return api_out(0, 0, NULL);
 }
 
+// Resolve the MAC and IP addresses used to fill unset packet fields: source
+// from the transmit interface, destination from the receive interface.
+static void
+tgen_resolve_defaults(uint16_t tx_iface_id, uint16_t rx_iface_id, struct tgen_pkt_defaults *def) {
+	struct rte_ipv6_addr any6 = {0};
+	struct iface *txi = iface_from_id(tx_iface_id);
+	struct iface *rxi = iface_from_id(rx_iface_id);
+	struct nexthop *nh;
+
+	if (txi != NULL)
+		iface_get_eth_addr(txi, &def->src_mac);
+	if (rxi != NULL)
+		iface_get_eth_addr(rxi, &def->dst_mac);
+	if (txi != NULL && (nh = addr4_get_preferred(txi->id, 0)) != NULL)
+		def->src_ip4 = nexthop_info_l3(nh)->ipv4;
+	if (rxi != NULL && (nh = addr4_get_preferred(rxi->id, 0)) != NULL)
+		def->dst_ip4 = nexthop_info_l3(nh)->ipv4;
+	if (txi != NULL && (nh = addr6_get_preferred(txi->id, &any6)) != NULL)
+		def->src_ip6 = nexthop_info_l3(nh)->ipv6;
+	if (rxi != NULL && (nh = addr6_get_preferred(rxi->id, &any6)) != NULL)
+		def->dst_ip6 = nexthop_info_l3(nh)->ipv6;
+}
+
 static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	const struct gr_tgen_flow_add_req *req = request;
+	uint8_t framebuf[GR_TGEN_MAX_PKT_LEN];
 	struct gr_tgen_flow_add_resp *resp;
 	uint16_t tx_port, rx_port;
+	const uint8_t *frame;
+	uint16_t frame_len;
 	struct tgen_flow *flow;
 	struct rte_mbuf *m;
 	void *data;
@@ -624,6 +654,31 @@ static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	if ((ret = resolve_port(req->rx_iface_id, &rx_port)) < 0)
 		return api_out(-ret, 0, NULL);
 
+	if (req->format == GR_TGEN_PKT_TEXT) {
+		struct tgen_pkt_defaults def = {0};
+		char errbuf[128] = {0};
+		if (req->pkt[req->pkt_len - 1] != '\0')
+			return api_out(EINVAL, 0, NULL);
+		tgen_resolve_defaults(req->tx_iface_id, req->rx_iface_id, &def);
+		ret = tgen_pkt_build(
+			(const char *)req->pkt,
+			&def,
+			framebuf,
+			sizeof(framebuf),
+			&frame_len,
+			errbuf,
+			sizeof(errbuf)
+		);
+		if (ret < 0) {
+			LOG(ERR, "tgen flow: %s", errbuf);
+			return api_out(-ret, 0, NULL);
+		}
+		frame = framebuf;
+	} else {
+		frame = req->pkt;
+		frame_len = req->pkt_len;
+	}
+
 	if (tgen_pool == NULL) {
 		tgen_pool = gr_pktmbuf_pool_get(SOCKET_ID_ANY, TGEN_POOL_SIZE);
 		if (tgen_pool == NULL)
@@ -633,12 +688,12 @@ static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	m = rte_pktmbuf_alloc(tgen_pool);
 	if (m == NULL)
 		return api_out(ENOMEM, 0, NULL);
-	data = rte_pktmbuf_append(m, req->pkt_len);
+	data = rte_pktmbuf_append(m, frame_len);
 	if (data == NULL) {
 		rte_pktmbuf_free(m);
 		return api_out(EMSGSIZE, 0, NULL);
 	}
-	memcpy(data, req->pkt, req->pkt_len);
+	memcpy(data, frame, frame_len);
 
 	flow = calloc(1, sizeof(*flow));
 	if (flow == NULL) {
@@ -651,7 +706,7 @@ static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
 	flow->tx_port_id = tx_port;
 	flow->rx_port_id = rx_port;
 	flow->priv.template = m;
-	flow->priv.pkt_len = req->pkt_len;
+	flow->priv.pkt_len = frame_len;
 	vec_add(flows, flow);
 
 	if ((ret = tgen_reload()) < 0) {
@@ -864,7 +919,7 @@ static void tgen_control_start(struct event_base *base) {
 
 static struct module tgen_module = {
 	.name = "tgen",
-	.depends_on = "infra",
+	.depends_on = "infra,ip,ip6",
 	.init = tgen_control_start,
 };
 

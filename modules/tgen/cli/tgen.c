@@ -90,7 +90,7 @@ static cmd_status_t tgen_flow_add(struct gr_api_client *c, const struct ec_pnode
 	uint16_t tx_id, rx_id, frame_len = 0;
 	void *resp_ptr = NULL;
 	uint8_t *frame = NULL;
-	const char *path;
+	const char *path, *expr;
 	size_t len;
 	int ret;
 
@@ -99,22 +99,35 @@ static cmd_status_t tgen_flow_add(struct gr_api_client *c, const struct ec_pnode
 	if (arg_iface(c, p, "RX", GR_IFACE_TYPE_PORT, &rx_id) < 0)
 		return CMD_ERROR;
 
-	path = arg_str(p, "FILE");
-	if ((ret = pcap_read_first(path, &frame, &frame_len)) < 0) {
-		errorf("%s: %s", path, strerror(-ret));
-		return CMD_ERROR;
+	expr = arg_str(p, "EXPR");
+	if (expr != NULL) {
+		// scapy-like text template: forged into bytes by the daemon
+		uint16_t elen = strlen(expr) + 1;
+		len = sizeof(*req) + elen;
+		if ((req = calloc(1, len)) == NULL)
+			return CMD_ERROR;
+		req->format = GR_TGEN_PKT_TEXT;
+		req->pkt_len = elen;
+		memcpy(req->pkt, expr, elen);
+	} else {
+		path = arg_str(p, "FILE");
+		if ((ret = pcap_read_first(path, &frame, &frame_len)) < 0) {
+			errorf("%s: %s", path, strerror(-ret));
+			return CMD_ERROR;
+		}
+		len = sizeof(*req) + frame_len;
+		if ((req = calloc(1, len)) == NULL) {
+			free(frame);
+			return CMD_ERROR;
+		}
+		req->format = GR_TGEN_PKT_RAW;
+		req->pkt_len = frame_len;
+		memcpy(req->pkt, frame, frame_len);
+		free(frame);
 	}
 
-	len = sizeof(*req) + frame_len;
-	if ((req = calloc(1, len)) == NULL) {
-		free(frame);
-		return CMD_ERROR;
-	}
 	req->tx_iface_id = tx_id;
 	req->rx_iface_id = rx_id;
-	req->pkt_len = frame_len;
-	memcpy(req->pkt, frame, frame_len);
-	free(frame);
 
 	if (gr_api_client_send_recv(c, GR_TGEN_FLOW_ADD, len, req, &resp_ptr) < 0) {
 		free(req);
@@ -381,9 +394,9 @@ static int ctx_init(struct ec_node *root) {
 
 	ret = CLI_COMMAND(
 		FLOW_CTX(root),
-		"add tx TX rx RX pcap FILE",
+		"add tx TX rx RX ((pcap FILE)|(packet EXPR))",
 		tgen_flow_add,
-		"Add a traffic flow from a pcap template.",
+		"Add a traffic flow from a pcap file or a scapy-like text template.",
 		with_help(
 			"Transmit interface.",
 			ec_node_dyn("TX", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
@@ -392,7 +405,11 @@ static int ctx_init(struct ec_node *root) {
 			"Receive interface.",
 			ec_node_dyn("RX", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
 		),
-		with_help("Path to a pcap file.", ec_node("any", "FILE"))
+		with_help("Path to a pcap file.", ec_node("any", "FILE")),
+		with_help(
+			"Scapy-like template, e.g. \"Ether()/IP(dst=1.2.3.4)/UDP(dport=53)\".",
+			ec_node("any", "EXPR")
+		)
 	);
 	if (ret < 0)
 		return ret;
