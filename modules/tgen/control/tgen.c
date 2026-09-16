@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Robin Jarry
 
+#include "event.h"
 #include "iface.h"
 #include "ip4.h"
 #include "ip6.h"
@@ -169,7 +170,7 @@ static int rate_apply(void) {
 		}
 		const struct iface *iface = port_get_iface(port);
 		uint32_t speed = iface != NULL ? iface->speed : 0;
-		if (speed == 0)
+		if (speed == 0 || speed == RTE_ETH_SPEED_NUM_UNKNOWN)
 			return errno_set(ENOTCONN);
 		// megabit/s divided by frame bits (incl. 20B IFG + preamble)
 		double line_pps = (double)speed * 1e6 / (((double)pkt + 20.0) * 8.0);
@@ -235,6 +236,41 @@ static void run_counters_get(struct run_counters *c) {
 
 	if (c->tx_packets > c->rx_packets + c->rx_missed)
 		c->drop_packets = c->tx_packets - (c->rx_packets + c->rx_missed);
+}
+
+// Aggregate line rate of the distinct transmit ports: the 100% reference for the
+// rate percentages and the RFC2544 result. The packet rate uses the weighted
+// mean frame size per port so it is meaningful for IMIX too.
+static void tgen_line_rate(double *bps_out, double *pps_out) {
+	bool seen[RTE_MAX_ETHPORTS] = {0};
+	double bps = 0, pps = 0;
+
+	vec_foreach (struct tgen_flow *f, flows) {
+		uint16_t port = f->tx_port_id;
+		if (seen[port])
+			continue;
+		seen[port] = true;
+		const struct iface *iface = port_get_iface(port);
+		if (iface == NULL || iface->speed == 0 || iface->speed == RTE_ETH_SPEED_NUM_UNKNOWN)
+			continue;
+
+		uint64_t wsum = 0, fsum = 0;
+		vec_foreach (struct tgen_flow *g, flows) {
+			if (g->tx_port_id != port)
+				continue;
+			wsum += g->weight;
+			fsum += (uint64_t)g->weight * g->priv.pkt_len;
+		}
+		double avg = wsum != 0 ? (double)fsum / (double)wsum : 64;
+		double port_bps = (double)iface->speed * 1e6;
+
+		bps += port_bps;
+		// account for the 20 byte inter-frame gap and preamble
+		pps += port_bps / ((avg + 20.0) * 8.0);
+	}
+
+	*bps_out = bps;
+	*pps_out = pps;
 }
 
 static int resolve_port(uint16_t iface_id, uint16_t *port_id) {
@@ -441,16 +477,30 @@ static const struct worker_graph_builder tgen_builder = {
 	.build = tgen_graph_build,
 };
 
+// Broadcast a start/stop event to subscribed clients.
+static void tgen_event(uint32_t ev, bool is_rfc);
+
 // RFC2544 no-drop-rate binary search, driven by a libevent timer
 
 #define RFC2544_DEFAULT_ITER 10
 #define RFC2544_DEFAULT_DURATION 2.0
 #define RFC2544_RATE_EPSILON 0.1 // stop once the rate interval is this narrow (%)
+// short, sub-second phases to prime the datapath and drain stray packets
+#define RFC2544_WARMUP_MS 500
+#define RFC2544_GRACE_MS 200
 
 static struct event_base *tgen_base;
 
+enum rfc_phase {
+	RFC_WARMUP, // priming burst, discarded
+	RFC_WARMUP_DRAIN, // drain the warmup burst
+	RFC_RUN, // measured transmission at the rate under test
+	RFC_DRAIN, // let in-flight packets arrive before measuring
+};
+
 static struct rfc2544 {
 	bool active;
+	enum rfc_phase phase;
 	unsigned iter;
 	unsigned max_iter;
 	double low; // highest known passing rate (percent)
@@ -458,18 +508,41 @@ static struct rfc2544 {
 	double cur; // rate under test
 	double best; // best passing rate found, -1 if none
 	double max_drop_pct;
-	struct timeval duration;
+	double run_sec; // measured transmission duration, seconds
+	double be_pps; // highest received rate seen, regardless of drops
+	double be_bps;
+	struct timeval run;
 	struct event *timer;
 } rfc;
+
+static const struct timeval rfc_warmup = {.tv_usec = RFC2544_WARMUP_MS * 1000};
+static const struct timeval rfc_grace = {.tv_usec = RFC2544_GRACE_MS * 1000};
+
+static void tgen_event(uint32_t ev, bool is_rfc) {
+	struct gr_tgen_event e = {
+		.rfc2544 = is_rfc,
+		.rfc2544_iteration = rfc.iter,
+		.rfc2544_ndr = rfc.best,
+		.best_effort_pps = rfc.be_pps,
+		.best_effort_bps = rfc.be_bps,
+	};
+	tgen_line_rate(&e.line_rate_bps, &e.line_rate_pps);
+	event_push(ev, &e);
+}
 
 static void rfc_finish(void) {
 	atomic_store(&tgen_run.running, false);
 	rfc.active = false;
-	LOG(NOTICE, "rfc2544: done after %u iterations, NDR=%.3f%%", rfc.iter, rfc.best);
+	if (rfc.best < 0)
+		LOG(NOTICE, "rfc2544: done after %u iterations, no no-drop rate", rfc.iter);
+	else
+		LOG(NOTICE, "rfc2544: done after %u iterations, NDR=%.3f%%", rfc.iter, rfc.best);
+	tgen_event(GR_EVENT_TGEN_STOP, true);
 }
 
-static void rfc_start_iteration(void) {
-	rfc.cur = (rfc.low + rfc.high) / 2.0;
+// Begin a measured iteration: test the ceiling (100%) first, then bisect.
+static void rfc_begin_iteration(void) {
+	rfc.cur = rfc.iter == 0 ? rfc.high : (rfc.low + rfc.high) / 2.0;
 	rate_mode = GR_TGEN_RATE_PCT;
 	rate_value = rfc.cur;
 	rate_only_port = -1;
@@ -481,19 +554,28 @@ static void rfc_start_iteration(void) {
 	}
 	baseline_reset();
 	atomic_store(&tgen_run.running, true);
-	if (event_add(rfc.timer, &rfc.duration) < 0) {
+	rfc.phase = RFC_RUN;
+	if (event_add(rfc.timer, &rfc.run) < 0) {
 		LOG(ERR, "rfc2544: event_add failed, aborting");
 		rfc_finish();
 	}
 }
 
-static void rfc_iteration_done(evutil_socket_t, short, void *) {
+static void rfc_measure(void) {
 	struct run_counters c;
 	double drop_pct;
 
-	atomic_store(&tgen_run.running, false);
 	run_counters_get(&c);
 	drop_pct = c.tx_packets > 0 ? 100.0 * (double)c.drop_packets / (double)c.tx_packets : 100.0;
+
+	// track the highest rate actually received, even for a dropping iteration
+	if (rfc.run_sec > 0) {
+		double rx_pps = (double)c.rx_packets / rfc.run_sec;
+		if (rx_pps > rfc.be_pps) {
+			rfc.be_pps = rx_pps;
+			rfc.be_bps = (double)c.rx_bytes * 8.0 / rfc.run_sec;
+		}
+	}
 
 	if (drop_pct <= rfc.max_drop_pct) {
 		rfc.best = rfc.cur;
@@ -503,18 +585,42 @@ static void rfc_iteration_done(evutil_socket_t, short, void *) {
 	}
 	rfc.iter++;
 
+	char best[16];
+	if (rfc.best < 0)
+		snprintf(best, sizeof(best), "none");
+	else
+		snprintf(best, sizeof(best), "%.3f%%", rfc.best);
 	LOG(INFO,
-	    "rfc2544: iteration %u rate=%.3f%% drop=%.6f%% best=%.3f%%",
+	    "rfc2544: iteration %u rate=%.3f%% drop=%.6f%% best=%s",
 	    rfc.iter,
 	    rfc.cur,
 	    drop_pct,
-	    rfc.best);
+	    best);
+}
 
-	if (rfc.iter >= rfc.max_iter || (rfc.high - rfc.low) < RFC2544_RATE_EPSILON) {
-		rfc_finish();
-		return;
+static void rfc_timer_cb(evutil_socket_t, short, void *) {
+	switch (rfc.phase) {
+	case RFC_WARMUP:
+		atomic_store(&tgen_run.running, false);
+		rfc.phase = RFC_WARMUP_DRAIN;
+		event_add(rfc.timer, &rfc_grace);
+		break;
+	case RFC_WARMUP_DRAIN:
+		rfc_begin_iteration();
+		break;
+	case RFC_RUN:
+		atomic_store(&tgen_run.running, false);
+		rfc.phase = RFC_DRAIN;
+		event_add(rfc.timer, &rfc_grace);
+		break;
+	case RFC_DRAIN:
+		rfc_measure();
+		if (rfc.iter >= rfc.max_iter || (rfc.high - rfc.low) < RFC2544_RATE_EPSILON)
+			rfc_finish();
+		else
+			rfc_begin_iteration();
+		break;
 	}
-	rfc_start_iteration();
 }
 
 static struct api_out tgen_rfc2544(const void *request, struct api_ctx *) {
@@ -531,25 +637,40 @@ static struct api_out tgen_rfc2544(const void *request, struct api_ctx *) {
 	rfc.max_iter = req->max_iterations != 0 ? req->max_iterations : RFC2544_DEFAULT_ITER;
 	rfc.max_drop_pct = req->max_drop;
 	dur = req->duration > 0 ? req->duration : RFC2544_DEFAULT_DURATION;
-	rfc.duration.tv_sec = (time_t)dur;
-	rfc.duration.tv_usec = (suseconds_t)((dur - (double)rfc.duration.tv_sec) * 1e6);
+	rfc.run.tv_sec = (time_t)dur;
+	rfc.run.tv_usec = (suseconds_t)((dur - (double)rfc.run.tv_sec) * 1e6);
+	rfc.run_sec = dur;
 	rfc.low = 0;
 	rfc.high = 100;
 	rfc.best = -1;
+	rfc.be_pps = 0;
+	rfc.be_bps = 0;
 	rfc.iter = 0;
 	rfc.active = true;
 
 	if (rfc.timer == NULL) {
-		rfc.timer = evtimer_new(tgen_base, rfc_iteration_done, NULL);
+		rfc.timer = evtimer_new(tgen_base, rfc_timer_cb, NULL);
 		if (rfc.timer == NULL) {
 			rfc.active = false;
 			return api_out(ENOMEM, 0, NULL);
 		}
 	}
 
-	rfc_start_iteration();
-	if (!rfc.active)
+	// warm up at full line rate to prime queues and caches before searching
+	rate_mode = GR_TGEN_RATE_PCT;
+	rate_value = 100;
+	rate_only_port = -1;
+	if (rate_apply() < 0) {
+		rfc.active = false;
+		return api_out(ENOTCONN, 0, NULL);
+	}
+	atomic_store(&tgen_run.running, true);
+	rfc.phase = RFC_WARMUP;
+	tgen_event(GR_EVENT_TGEN_START, true);
+	if (event_add(rfc.timer, &rfc_warmup) < 0) {
+		rfc_finish();
 		return api_out(EIO, 0, NULL);
+	}
 
 	return api_out(0, 0, NULL);
 }
@@ -576,10 +697,13 @@ static struct api_out tgen_status(const void * /*request*/, struct api_ctx *) {
 	resp->rx_bytes = c.rx_bytes;
 	resp->rx_missed = c.rx_missed;
 	resp->drop_packets = c.drop_packets;
+	tgen_line_rate(&resp->line_rate_bps, &resp->line_rate_pps);
 
 	resp->rfc2544_active = rfc.active;
 	resp->rfc2544_iteration = rfc.iter;
 	resp->rfc2544_ndr = rfc.best;
+	resp->best_effort_pps = rfc.be_pps;
+	resp->best_effort_bps = rfc.be_bps;
 
 	return api_out(0, sizeof(*resp), resp);
 }
@@ -616,12 +740,14 @@ static struct api_out tgen_start(const void *request, struct api_ctx *) {
 
 	baseline_reset();
 	atomic_store(&tgen_run.running, true);
+	tgen_event(GR_EVENT_TGEN_START, false);
 
 	return api_out(0, 0, NULL);
 }
 
 static struct api_out tgen_stop(const void * /*request*/, struct api_ctx *) {
-	atomic_store(&tgen_run.running, false);
+	if (atomic_exchange(&tgen_run.running, false))
+		tgen_event(GR_EVENT_TGEN_STOP, false);
 	return api_out(0, 0, NULL);
 }
 
@@ -789,7 +915,8 @@ static struct api_out tgen_flow_clear(const void * /*request*/, struct api_ctx *
 	int ret;
 
 	flows = NULL;
-	atomic_store(&tgen_run.running, false);
+	if (atomic_exchange(&tgen_run.running, false))
+		tgen_event(GR_EVENT_TGEN_STOP, false);
 
 	vec_foreach (struct tgen_sweep_entry *e, sweeps)
 		free(e);
@@ -953,6 +1080,8 @@ RTE_INIT(tgen_control_init) {
 	api_handler(GR_TGEN_SWEEP_CLEAR, tgen_sweep_clear);
 	api_handler(GR_TGEN_SWEEP_LIST, tgen_sweep_list);
 	api_handler(GR_TGEN_RFC2544, tgen_rfc2544);
+	event_serializer(GR_EVENT_TGEN_START, NULL);
+	event_serializer(GR_EVENT_TGEN_STOP, NULL);
 	worker_graph_builder_register(&tgen_builder);
 	module_register(&tgen_module);
 }

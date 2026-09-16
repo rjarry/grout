@@ -45,10 +45,16 @@ struct gr_tgen_status_resp {
 	uint64_t rx_bytes;
 	uint64_t rx_missed;
 	uint64_t drop_packets; // tx_packets - (rx_packets + rx_missed), floored at 0
+	// aggregate line rate of the tx ports: the 100% reference
+	double line_rate_bps;
+	double line_rate_pps;
 	// RFC2544 binary search progress
 	bool rfc2544_active;
 	uint32_t rfc2544_iteration;
-	double rfc2544_ndr; // best no-drop rate (percent), -1 if none found
+	double rfc2544_ndr; // best no-drop rate as a percentage of line rate, -1 if none
+	// highest rate actually received during the search, regardless of drops
+	double best_effort_pps;
+	double best_effort_bps;
 };
 
 GR_REQ(GR_TGEN_STATUS, struct gr_empty, struct gr_tgen_status_resp);
@@ -155,3 +161,25 @@ struct gr_tgen_rfc2544_req {
 };
 
 GR_REQ(GR_TGEN_RFC2544, struct gr_tgen_rfc2544_req, struct gr_empty);
+
+// Broadcast when the generator starts and stops transmitting. The RFC2544
+// fields are only meaningful on the stop event of a search.
+enum gr_tgen_events : uint32_t {
+	GR_EVENT_TGEN_START = GR_MSG_TYPE(GR_TGEN_MODULE, 0x1001),
+	GR_EVENT_TGEN_STOP,
+};
+
+struct gr_tgen_event {
+	bool rfc2544; // set when the run was an RFC2544 search
+	uint32_t rfc2544_iteration;
+	double rfc2544_ndr; // percentage of line rate
+	// 100% reference, to turn the NDR percentage into an absolute throughput
+	double line_rate_bps;
+	double line_rate_pps;
+	// highest rate actually received during the search, regardless of drops
+	double best_effort_pps;
+	double best_effort_bps;
+};
+
+GR_EVENT(GR_EVENT_TGEN_START, struct gr_tgen_event);
+GR_EVENT(GR_EVENT_TGEN_STOP, struct gr_tgen_event);

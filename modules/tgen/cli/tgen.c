@@ -2,16 +2,19 @@
 // Copyright (c) 2026 Robin Jarry
 
 #include "cli.h"
+#include "cli_event.h"
 #include "cli_iface.h"
 #include "display.h"
 
 #include <gr_api.h>
 #include <gr_infra.h>
+#include <gr_macro.h>
 #include <gr_tgen.h>
 
 #include <ecoli.h>
 
 #include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -316,8 +319,20 @@ static cmd_status_t tgen_stop(struct gr_api_client *c, const struct ec_pnode *) 
 	return CMD_SUCCESS;
 }
 
+static volatile sig_atomic_t rfc_timed_out;
+
+static void rfc_alarm(int) {
+	rfc_timed_out = 1;
+}
+
 static cmd_status_t tgen_rfc2544(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_event_subscribe_req sub = {.ev_type = GR_EVENT_TGEN_STOP};
 	struct gr_tgen_rfc2544_req req = {0};
+	struct sigaction sa = {.sa_handler = rfc_alarm}, old;
+	cmd_status_t status = CMD_ERROR;
+	struct gr_api_event *e = NULL;
+	unsigned timeout;
+	double dur;
 	const char *s;
 	uint32_t it = 0;
 
@@ -332,34 +347,59 @@ static cmd_status_t tgen_rfc2544(struct gr_api_client *c, const struct ec_pnode 
 	if ((s = arg_str(p, "DUR")) != NULL)
 		req.duration = strtod(s, NULL);
 
-	if (gr_api_client_send_recv(c, GR_TGEN_RFC2544, sizeof(req), &req, NULL) < 0)
+	// subscribe to the stop event before starting so it cannot be missed
+	if (gr_api_client_send_recv(c, GR_EVENT_SUBSCRIBE, sizeof(sub), &sub, NULL) < 0)
 		return CMD_ERROR;
 
-	// the search runs in the daemon, poll its status until it completes
-	for (;;) {
-		const struct gr_tgen_status_resp *st;
-		void *resp_ptr = NULL;
-		bool active;
-		double ndr;
-		uint32_t iter;
+	if (gr_api_client_send_recv(c, GR_TGEN_RFC2544, sizeof(req), &req, NULL) < 0)
+		goto out;
 
-		usleep(500000);
-		if (gr_api_client_send_recv(c, GR_TGEN_STATUS, 0, NULL, &resp_ptr) < 0)
-			return CMD_ERROR;
-		st = resp_ptr;
-		active = st->rfc2544_active;
-		ndr = st->rfc2544_ndr;
-		iter = st->rfc2544_iteration;
-		free(resp_ptr);
+	// bound the wait on the iteration characteristics (warmup + grace + slack)
+	dur = req.duration > 0 ? req.duration : 2.0;
+	timeout = (unsigned)(2 + ((req.max_iterations ? req.max_iterations : 10) + 1) * (dur + 1));
 
-		if (!active) {
-			if (ndr < 0)
-				printf("no no-drop rate found after %u iterations\n", iter);
-			else
-				printf("no-drop rate: %.3f%% (%u iterations)\n", ndr, iter);
-			return CMD_SUCCESS;
+	rfc_timed_out = 0;
+	sigaction(SIGALRM, &sa, &old);
+	alarm(timeout);
+
+	while (!rfc_timed_out) {
+		if (gr_api_client_event_recv(c, &e) < 0)
+			break; // interrupted by the alarm or a socket error
+		if (e->ev_type == GR_EVENT_TGEN_STOP) {
+			const struct gr_tgen_event *ev = PAYLOAD(e);
+			if (ev->rfc2544_ndr < 0) {
+				printf("no no-drop rate found after %u iterations\n",
+				       ev->rfc2544_iteration);
+			} else {
+				double frac = ev->rfc2544_ndr / 100.0;
+				printf("no-drop rate: %.3f%% of line rate = %.3f Mpps / %.3f Gbps "
+				       "(%u iterations)\n",
+				       ev->rfc2544_ndr,
+				       frac * ev->line_rate_pps / 1e6,
+				       frac * ev->line_rate_bps / 1e9,
+				       ev->rfc2544_iteration);
+			}
+			printf("best effort: %.3f Mpps / %.3f Gbps\n",
+			       ev->best_effort_pps / 1e6,
+			       ev->best_effort_bps / 1e9);
+			status = CMD_SUCCESS;
+			free(e);
+			e = NULL;
+			break;
 		}
+		free(e);
+		e = NULL;
 	}
+
+	alarm(0);
+	sigaction(SIGALRM, &old, NULL);
+	free(e);
+	if (status != CMD_SUCCESS)
+		errorf("rfc2544: timed out waiting for completion");
+
+out:
+	gr_api_client_send_recv(c, GR_EVENT_UNSUBSCRIBE, 0, NULL, NULL);
+	return status;
 }
 
 static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *) {
@@ -381,6 +421,14 @@ static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *
 	else if (resp->rate_mode == GR_TGEN_RATE_PPS)
 		gr_object_field(o, "rate", GR_DISP_LEFT, "%g pps", resp->rate_value);
 	gr_object_field(o, "pps_per_clone", GR_DISP_FLOAT, "%.0f", resp->pps_per_clone);
+	gr_object_field(
+		o,
+		"line_rate",
+		GR_DISP_LEFT,
+		"%.3f Mpps / %.3f Gbps",
+		resp->line_rate_pps / 1e6,
+		resp->line_rate_bps / 1e9
+	);
 	gr_object_field(o, "tx_packets", GR_DISP_INT, "%lu", resp->tx_packets);
 	gr_object_field(o, "tx_bytes", GR_DISP_INT, "%lu", resp->tx_bytes);
 	gr_object_field(o, "rx_packets", GR_DISP_INT, "%lu", resp->rx_packets);
@@ -388,6 +436,15 @@ static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *
 	gr_object_field(o, "rx_missed", GR_DISP_INT, "%lu", resp->rx_missed);
 	gr_object_field(o, "drop_packets", GR_DISP_INT, "%lu", resp->drop_packets);
 	gr_object_field(o, "drop_pct", GR_DISP_FLOAT, "%.6f", drop_pct);
+	if (resp->best_effort_pps > 0)
+		gr_object_field(
+			o,
+			"best_effort",
+			GR_DISP_LEFT,
+			"%.3f Mpps / %.3f Gbps",
+			resp->best_effort_pps / 1e6,
+			resp->best_effort_bps / 1e9
+		);
 	gr_object_free(o);
 
 	free(resp_ptr);
@@ -530,6 +587,41 @@ static struct cli_context ctx = {
 	.init = ctx_init,
 };
 
+static void tgen_event_print(uint32_t event, const void *obj) {
+	const struct gr_tgen_event *e = obj;
+
+	printf("tgen %s", event == GR_EVENT_TGEN_START ? "start" : "stop");
+	if (e->rfc2544) {
+		printf(" rfc2544 iteration=%u", e->rfc2544_iteration);
+		if (event == GR_EVENT_TGEN_STOP) {
+			if (e->rfc2544_ndr < 0) {
+				printf(" ndr=none");
+			} else {
+				double frac = e->rfc2544_ndr / 100.0;
+				printf(" ndr=%.3f%% (%.3f Mpps / %.3f Gbps)",
+				       e->rfc2544_ndr,
+				       frac * e->line_rate_pps / 1e6,
+				       frac * e->line_rate_bps / 1e9);
+			}
+			printf(" best_effort=%.3f Mpps / %.3f Gbps",
+			       e->best_effort_pps / 1e6,
+			       e->best_effort_bps / 1e9);
+		}
+	}
+	printf("\n");
+}
+
+static struct cli_event_printer event_printer = {
+	.name = "tgen",
+	.print = tgen_event_print,
+	.ev_count = 2,
+	.ev_types = {
+		GR_EVENT_TGEN_START,
+		GR_EVENT_TGEN_STOP,
+	},
+};
+
 static void __attribute__((constructor, used)) init(void) {
 	cli_context_register(&ctx);
+	cli_event_printer_register(&event_printer);
 }
