@@ -114,6 +114,23 @@ static void pointers(void **) {
 	assert_string_equal(buf, "(nil)");
 }
 
+static void human(void **) {
+	char buf[64];
+
+	snprintf(buf, sizeof(buf), HUMAN_F, HUMAN_V(1500));
+	assert_string_equal(buf, "1.5K");
+	snprintf(buf, sizeof(buf), HUMAN_F, HUMAN_V(2500000));
+	assert_string_equal(buf, "2.5M");
+	snprintf(buf, sizeof(buf), HUMAN_F, HUMAN_V(150000));
+	assert_string_equal(buf, "150K");
+	snprintf(buf, sizeof(buf), HUMAN_F, HUMAN_V(999));
+	assert_string_equal(buf, "999");
+	snprintf(buf, sizeof(buf), HUMAN_F, HUMAN_V(12000000000));
+	assert_string_equal(buf, "12.0G");
+	snprintf(buf, sizeof(buf), HUMAN_IEC_F, HUMAN_V(1048576));
+	assert_string_equal(buf, "1.0Mi");
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(ether),
@@ -122,6 +139,7 @@ int main(void) {
 		cmocka_unit_test(ipv4_net),
 		cmocka_unit_test(ipv6_net),
 		cmocka_unit_test(pointers),
+		cmocka_unit_test(human),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

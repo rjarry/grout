@@ -372,16 +372,16 @@ static cmd_status_t tgen_rfc2544(struct gr_api_client *c, const struct ec_pnode 
 				       ev->rfc2544_iteration);
 			} else {
 				double frac = ev->rfc2544_ndr / 100.0;
-				printf("no-drop rate: %.3f%% of line rate = %.3f Mpps / %.3f Gbps "
-				       "(%u iterations)\n",
+				printf("no-drop rate: %.3f%% of line rate = " HUMAN_F
+				       " pps / " HUMAN_F " bps (%u iterations)\n",
 				       ev->rfc2544_ndr,
-				       frac * ev->line_rate_pps / 1e6,
-				       frac * ev->line_rate_bps / 1e9,
+				       HUMAN_V(frac * ev->line_rate_pps),
+				       HUMAN_V(frac * ev->line_rate_bps),
 				       ev->rfc2544_iteration);
 			}
-			printf("best effort: %.3f Mpps / %.3f Gbps\n",
-			       ev->best_effort_pps / 1e6,
-			       ev->best_effort_bps / 1e9);
+			printf("best effort: " HUMAN_F " pps / " HUMAN_F " bps\n",
+			       HUMAN_V(ev->best_effort_pps),
+			       HUMAN_V(ev->best_effort_bps));
 			status = CMD_SUCCESS;
 			free(e);
 			e = NULL;
@@ -425,9 +425,9 @@ static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *
 		o,
 		"line_rate",
 		GR_DISP_LEFT,
-		"%.3f Mpps / %.3f Gbps",
-		resp->line_rate_pps / 1e6,
-		resp->line_rate_bps / 1e9
+		HUMAN_F " pps / " HUMAN_F " bps",
+		HUMAN_V(resp->line_rate_pps),
+		HUMAN_V(resp->line_rate_bps)
 	);
 	gr_object_field(o, "tx_packets", GR_DISP_INT, "%lu", resp->tx_packets);
 	gr_object_field(o, "tx_bytes", GR_DISP_INT, "%lu", resp->tx_bytes);
@@ -441,9 +441,9 @@ static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *
 			o,
 			"best_effort",
 			GR_DISP_LEFT,
-			"%.3f Mpps / %.3f Gbps",
-			resp->best_effort_pps / 1e6,
-			resp->best_effort_bps / 1e9
+			HUMAN_F " pps / " HUMAN_F " bps",
+			HUMAN_V(resp->best_effort_pps),
+			HUMAN_V(resp->best_effort_bps)
 		);
 	gr_object_free(o);
 
@@ -598,14 +598,14 @@ static void tgen_event_print(uint32_t event, const void *obj) {
 				printf(" ndr=none");
 			} else {
 				double frac = e->rfc2544_ndr / 100.0;
-				printf(" ndr=%.3f%% (%.3f Mpps / %.3f Gbps)",
+				printf(" ndr=%.3f%% (" HUMAN_F "pps / " HUMAN_F "bps)",
 				       e->rfc2544_ndr,
-				       frac * e->line_rate_pps / 1e6,
-				       frac * e->line_rate_bps / 1e9);
+				       HUMAN_V(frac * e->line_rate_pps),
+				       HUMAN_V(frac * e->line_rate_bps));
 			}
-			printf(" best_effort=%.3f Mpps / %.3f Gbps",
-			       e->best_effort_pps / 1e6,
-			       e->best_effort_bps / 1e9);
+			printf(" best_effort=" HUMAN_F "pps / " HUMAN_F "bps",
+			       HUMAN_V(e->best_effort_pps),
+			       HUMAN_V(e->best_effort_bps));
 		}
 	}
 	printf("\n");

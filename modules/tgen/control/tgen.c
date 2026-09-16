@@ -531,12 +531,23 @@ static void tgen_event(uint32_t ev, bool is_rfc) {
 }
 
 static void rfc_finish(void) {
+	double line_rate_pps, line_rate_bps;
+
 	atomic_store(&tgen_run.running, false);
 	rfc.active = false;
-	if (rfc.best < 0)
-		LOG(NOTICE, "rfc2544: done after %u iterations, no no-drop rate", rfc.iter);
-	else
-		LOG(NOTICE, "rfc2544: done after %u iterations, NDR=%.3f%%", rfc.iter, rfc.best);
+
+	tgen_line_rate(&line_rate_bps, &line_rate_pps);
+
+	LOG(NOTICE,
+	    "rfc2544: done after %u iterations, "
+	    "ndr=%.3f%% (" HUMAN_F "pps / " HUMAN_F " bps ) "
+	    "best effort " HUMAN_F " pps / " HUMAN_F " bps",
+	    rfc.iter,
+	    rfc.best,
+	    HUMAN_V(rfc.best * line_rate_pps),
+	    HUMAN_V(rfc.best * line_rate_bps),
+	    HUMAN_V(rfc.be_pps),
+	    HUMAN_V(rfc.be_bps));
 	tgen_event(GR_EVENT_TGEN_STOP, true);
 }
 
@@ -585,17 +596,13 @@ static void rfc_measure(void) {
 	}
 	rfc.iter++;
 
-	char best[16];
-	if (rfc.best < 0)
-		snprintf(best, sizeof(best), "none");
-	else
-		snprintf(best, sizeof(best), "%.3f%%", rfc.best);
 	LOG(INFO,
-	    "rfc2544: iteration %u rate=%.3f%% drop=%.6f%% best=%s",
+	    "rfc2544: iteration %u rate=%.1f%% drop=%.6f%% ndr=%.1f%% best=" HUMAN_F "pps",
 	    rfc.iter,
 	    rfc.cur,
 	    drop_pct,
-	    best);
+	    rfc.best,
+	    HUMAN_V(rfc.be_pps));
 }
 
 static void rfc_timer_cb(evutil_socket_t, short, void *) {

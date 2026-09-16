@@ -71,6 +71,13 @@ static inline bool gr_af_valid(addr_family_t af) {
 #define ADDR_W(family) (family == AF_INET ? 4 : (family == AF_INET6 ? 6 : 0))
 #define NET_W(family) (family == AF_INET ? 32 : (family == AF_INET6 ? 128 : 0))
 
+// Human readable number formatting. The argument is a pointer to a double.
+// HUMAN_F scales by 1000 (K, M, G, ...), HUMAN_IEC_F by 1024 (Ki, Mi, Gi, ...).
+#define HUMAN_F "%1000p"
+#define HUMAN_IEC_F "%1024p"
+// Pass a numeric value to HUMAN_F / HUMAN_IEC_F.
+#define HUMAN_V(value) (&(double) {(double)(value)})
+
 #define ETH_ADDR_RE "^[[:xdigit:]]{2}(:[[:xdigit:]]{2}){5}$"
 
 #define IPV4_ATOM "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])"
