@@ -171,17 +171,75 @@ static cmd_status_t tgen_flow_show(struct gr_api_client *c, const struct ec_pnod
 	return CMD_SUCCESS;
 }
 
+static cmd_status_t tgen_start(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_tgen_start_req req = {0};
+	const char *rate;
+	uint16_t pid;
+	double v;
+	char *end;
+
+	rate = arg_str(p, "RATE");
+	v = strtod(rate, &end);
+	if (end == rate || v <= 0) {
+		errorf("invalid rate '%s'", rate);
+		return CMD_ERROR;
+	}
+	if (strcmp(end, "%") == 0) {
+		req.rate_mode = GR_TGEN_RATE_PCT;
+	} else if (strcmp(end, "pps") == 0) {
+		req.rate_mode = GR_TGEN_RATE_PPS;
+	} else {
+		errorf("rate must end with %% or pps");
+		return CMD_ERROR;
+	}
+	req.rate_value = v;
+
+	if (arg_iface(c, p, "PORT", GR_IFACE_TYPE_PORT, &pid) < 0) {
+		if (errno != ENOENT)
+			return CMD_ERROR;
+	} else {
+		req.only_iface_id = pid;
+		req.has_port = true;
+	}
+
+	if (gr_api_client_send_recv(c, GR_TGEN_START, sizeof(req), &req, NULL) < 0)
+		return CMD_ERROR;
+
+	return CMD_SUCCESS;
+}
+
+static cmd_status_t tgen_stop(struct gr_api_client *c, const struct ec_pnode *) {
+	if (gr_api_client_send_recv(c, GR_TGEN_STOP, 0, NULL, NULL) < 0)
+		return CMD_ERROR;
+	return CMD_SUCCESS;
+}
+
 static cmd_status_t tgen_status(struct gr_api_client *c, const struct ec_pnode *) {
 	const struct gr_tgen_status_resp *resp;
 	void *resp_ptr = NULL;
+	double drop_pct = 0;
 
 	if (gr_api_client_send_recv(c, GR_TGEN_STATUS, 0, NULL, &resp_ptr) < 0)
 		return CMD_ERROR;
 
 	resp = resp_ptr;
+	if (resp->tx_packets > 0)
+		drop_pct = 100.0 * (double)resp->drop_packets / (double)resp->tx_packets;
 
 	struct gr_object *o = gr_object_new(NULL);
 	gr_object_field(o, "running", GR_DISP_BOOL, "%s", resp->running ? "true" : "false");
+	if (resp->rate_mode == GR_TGEN_RATE_PCT)
+		gr_object_field(o, "rate", GR_DISP_LEFT, "%g%%", resp->rate_value);
+	else if (resp->rate_mode == GR_TGEN_RATE_PPS)
+		gr_object_field(o, "rate", GR_DISP_LEFT, "%g pps", resp->rate_value);
+	gr_object_field(o, "pps_per_clone", GR_DISP_FLOAT, "%.0f", resp->pps_per_clone);
+	gr_object_field(o, "tx_packets", GR_DISP_INT, "%lu", resp->tx_packets);
+	gr_object_field(o, "tx_bytes", GR_DISP_INT, "%lu", resp->tx_bytes);
+	gr_object_field(o, "rx_packets", GR_DISP_INT, "%lu", resp->rx_packets);
+	gr_object_field(o, "rx_bytes", GR_DISP_INT, "%lu", resp->rx_bytes);
+	gr_object_field(o, "rx_missed", GR_DISP_INT, "%lu", resp->rx_missed);
+	gr_object_field(o, "drop_packets", GR_DISP_INT, "%lu", resp->drop_packets);
+	gr_object_field(o, "drop_pct", GR_DISP_FLOAT, "%.6f", drop_pct);
 	gr_object_free(o);
 
 	free(resp_ptr);
@@ -225,6 +283,28 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 
 	ret = CLI_COMMAND(FLOW_CTX(root), "[show]", tgen_flow_show, "List traffic flows.");
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(
+		TGEN_CTX(root),
+		"start rate RATE [port PORT]",
+		tgen_start,
+		"Start generating traffic at the given rate.",
+		with_help(
+			"Rate as a line-rate percentage (e.g. 100%) or packets per "
+			"second (e.g. 1000pps).",
+			ec_node_re("RATE", "[0-9]+(\\.[0-9]+)?(%|pps)")
+		),
+		with_help(
+			"Only transmit out of this port.",
+			ec_node_dyn("PORT", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
+		)
+	);
+	if (ret < 0)
+		return ret;
+
+	ret = CLI_COMMAND(TGEN_CTX(root), "stop", tgen_stop, "Stop generating traffic.");
 	if (ret < 0)
 		return ret;
 

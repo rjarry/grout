@@ -19,13 +19,43 @@ enum gr_tgen_requests : uint32_t {
 	GR_TGEN_FLOW_DEL,
 	GR_TGEN_FLOW_CLEAR,
 	GR_TGEN_FLOW_LIST,
+	GR_TGEN_START,
+	GR_TGEN_STOP,
 };
+
+// Rate specification modes.
+typedef enum : uint8_t {
+	GR_TGEN_RATE_PCT = 1, // percentage of port line rate
+	GR_TGEN_RATE_PPS = 2, // total packets per second
+} gr_tgen_rate_mode_t;
 
 struct gr_tgen_status_resp {
 	bool running;
+	gr_tgen_rate_mode_t rate_mode;
+	double rate_value;
+	double pps_per_clone;
+	uint64_t tx_packets;
+	uint64_t tx_bytes;
+	uint64_t rx_packets;
+	uint64_t rx_bytes;
+	uint64_t rx_missed;
+	uint64_t drop_packets; // tx_packets - (rx_packets + rx_missed), floored at 0
 };
 
 GR_REQ(GR_TGEN_STATUS, struct gr_empty, struct gr_tgen_status_resp);
+
+// Start transmitting all configured flows at the given rate. If has_port is set,
+// only the given transmit port generates traffic.
+struct gr_tgen_start_req {
+	gr_tgen_rate_mode_t rate_mode;
+	double rate_value;
+	uint16_t only_iface_id;
+	bool has_port;
+};
+
+GR_REQ(GR_TGEN_START, struct gr_tgen_start_req, struct gr_empty);
+
+GR_REQ(GR_TGEN_STOP, struct gr_empty, struct gr_empty);
 
 // Create a flow transmitting a template frame out of tx_iface and expecting it
 // back on rx_iface. Both must be port interfaces.

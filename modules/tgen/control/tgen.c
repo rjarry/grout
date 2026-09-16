@@ -17,6 +17,7 @@
 #include <rte_common.h>
 #include <rte_cycles.h>
 #include <rte_errno.h>
+#include <rte_ethdev.h>
 #include <rte_graph.h>
 #include <rte_graph_worker.h>
 #include <rte_lcore.h>
@@ -48,11 +49,109 @@ static vec struct tgen_flow **flows;
 static uint32_t next_flow_id = 1;
 static struct rte_mempool *tgen_pool;
 
+// current rate request, replayed on reloads while running
+static gr_tgen_rate_mode_t rate_mode;
+static double rate_value;
+static int rate_only_port = -1;
+
+// hardware counter snapshot taken when generation starts
+struct port_stat_base {
+	uint64_t opackets;
+	uint64_t obytes;
+	uint64_t ipackets;
+	uint64_t ibytes;
+	uint64_t imissed;
+};
+static struct port_stat_base baseline[RTE_MAX_ETHPORTS];
+
 static bool port_is_tgen(uint16_t port_id) {
 	vec_foreach (struct tgen_flow *f, flows)
 		if (f->tx_port_id == port_id || f->rx_port_id == port_id)
 			return true;
 	return false;
+}
+
+static bool port_generates(uint16_t port_id) {
+	vec_foreach (struct tgen_flow *f, flows)
+		if (f->tx_port_id == port_id)
+			return true;
+	return false;
+}
+
+// Count the tgen_tx clones that actually generate traffic, i.e. the enabled tx
+// queues of a flow transmit port (optionally restricted to a single port).
+static unsigned count_gen_clones(int only_port) {
+	const struct queue_map *q;
+	struct worker *w;
+	unsigned n = 0;
+
+	STAILQ_FOREACH (w, &workers, next) {
+		vec_foreach_ref (q, w->txqs) {
+			if (!q->enabled || !port_generates(q->port_id))
+				continue;
+			if (only_port >= 0 && (int)q->port_id != only_port)
+				continue;
+			n++;
+		}
+	}
+	return n;
+}
+
+// Compute the per-clone packet rate from the current rate request and publish it
+// to the datapath.
+static int rate_apply(void) {
+	double pps_per_clone;
+	unsigned n;
+
+	n = count_gen_clones(rate_only_port);
+	if (n == 0)
+		return errno_set(ENODEV);
+
+	if (rate_mode == GR_TGEN_RATE_PPS) {
+		pps_per_clone = rate_value / n;
+	} else {
+		int port = rate_only_port;
+		uint16_t pkt = 64;
+
+		if (port < 0 && vec_len(flows) > 0)
+			port = flows[0]->tx_port_id;
+		vec_foreach (struct tgen_flow *f, flows) {
+			if ((int)f->tx_port_id == port) {
+				pkt = f->priv.pkt_len;
+				break;
+			}
+		}
+		const struct iface *iface = port_get_iface(port);
+		uint32_t speed = iface != NULL ? iface->speed : 0;
+		if (speed == 0)
+			return errno_set(ENOTCONN);
+		// megabit/s divided by frame bits (incl. 20B IFG + preamble)
+		double line_pps = (double)speed * 1e6 / (((double)pkt + 20.0) * 8.0);
+		pps_per_clone = (rate_value / 100.0) * line_pps / count_gen_clones(port);
+	}
+
+	atomic_store(&tgen_run.only_port, rate_only_port);
+	atomic_store(&tgen_run.pps_per_clone, pps_per_clone);
+	return 0;
+}
+
+static void baseline_reset(void) {
+	struct rte_eth_stats s;
+
+	vec_foreach (struct tgen_flow *f, flows) {
+		uint16_t ports[] = {f->tx_port_id, f->rx_port_id};
+		for (unsigned i = 0; i < 2; i++) {
+			if (rte_eth_stats_get(ports[i], &s) < 0)
+				continue;
+			baseline[ports[i]] = (struct port_stat_base) {
+				.opackets = s.opackets,
+				.obytes = s.obytes,
+				.ipackets = s.ipackets,
+				.ibytes = s.ibytes,
+				.imissed = s.imissed,
+			};
+		}
+	}
 }
 
 static int resolve_port(uint16_t iface_id, uint16_t *port_id) {
@@ -77,6 +176,9 @@ static int tgen_reload(void) {
 	vec struct iface_info_port **ports = get_all_ports();
 	int ret = worker_graph_reload_all(ports);
 	vec_free(ports);
+	// the number of generating clones may have changed, refresh the rate
+	if (ret == 0 && atomic_load(&tgen_run.running))
+		rate_apply();
 	return ret;
 }
 
@@ -229,13 +331,77 @@ static const struct worker_graph_builder tgen_builder = {
 // API handlers
 
 static struct api_out tgen_status(const void * /*request*/, struct api_ctx *) {
-	struct gr_tgen_status_resp *resp = calloc(1, sizeof(*resp));
+	bool tx_seen[RTE_MAX_ETHPORTS] = {0};
+	bool rx_seen[RTE_MAX_ETHPORTS] = {0};
+	struct gr_tgen_status_resp *resp;
+	struct rte_eth_stats s;
+
+	resp = calloc(1, sizeof(*resp));
 	if (resp == NULL)
 		return api_out(ENOMEM, 0, NULL);
 
 	resp->running = atomic_load(&tgen_run.running);
+	resp->rate_mode = rate_mode;
+	resp->rate_value = rate_value;
+	resp->pps_per_clone = atomic_load(&tgen_run.pps_per_clone);
+
+	vec_foreach (struct tgen_flow *f, flows) {
+		if (!tx_seen[f->tx_port_id] && rte_eth_stats_get(f->tx_port_id, &s) == 0) {
+			tx_seen[f->tx_port_id] = true;
+			resp->tx_packets += s.opackets - baseline[f->tx_port_id].opackets;
+			resp->tx_bytes += s.obytes - baseline[f->tx_port_id].obytes;
+		}
+		if (!rx_seen[f->rx_port_id] && rte_eth_stats_get(f->rx_port_id, &s) == 0) {
+			rx_seen[f->rx_port_id] = true;
+			resp->rx_packets += s.ipackets - baseline[f->rx_port_id].ipackets;
+			resp->rx_bytes += s.ibytes - baseline[f->rx_port_id].ibytes;
+			resp->rx_missed += s.imissed - baseline[f->rx_port_id].imissed;
+		}
+	}
+
+	if (resp->tx_packets > resp->rx_packets + resp->rx_missed)
+		resp->drop_packets = resp->tx_packets - (resp->rx_packets + resp->rx_missed);
 
 	return api_out(0, sizeof(*resp), resp);
+}
+
+static struct api_out tgen_start(const void *request, struct api_ctx *) {
+	const struct gr_tgen_start_req *req = request;
+	int only_port = -1;
+	int ret;
+
+	if (vec_len(flows) == 0)
+		return api_out(ENOENT, 0, NULL);
+	if (req->rate_mode != GR_TGEN_RATE_PCT && req->rate_mode != GR_TGEN_RATE_PPS)
+		return api_out(EINVAL, 0, NULL);
+	if (req->rate_value <= 0)
+		return api_out(EINVAL, 0, NULL);
+
+	if (req->has_port) {
+		uint16_t p;
+		if ((ret = resolve_port(req->only_iface_id, &p)) < 0)
+			return api_out(-ret, 0, NULL);
+		if (!port_generates(p))
+			return api_out(EINVAL, 0, NULL);
+		only_port = p;
+	}
+
+	rate_mode = req->rate_mode;
+	rate_value = req->rate_value;
+	rate_only_port = only_port;
+
+	if ((ret = rate_apply()) < 0)
+		return api_out(-ret, 0, NULL);
+
+	baseline_reset();
+	atomic_store(&tgen_run.running, true);
+
+	return api_out(0, 0, NULL);
+}
+
+static struct api_out tgen_stop(const void * /*request*/, struct api_ctx *) {
+	atomic_store(&tgen_run.running, false);
+	return api_out(0, 0, NULL);
 }
 
 static struct api_out tgen_flow_add(const void *request, struct api_ctx *ctx) {
@@ -335,6 +501,7 @@ static struct api_out tgen_flow_clear(const void * /*request*/, struct api_ctx *
 	int ret;
 
 	flows = NULL;
+	atomic_store(&tgen_run.running, false);
 
 	if ((ret = tgen_reload()) < 0)
 		LOG(ERR, "tgen_reload after flow clear: %s", strerror(-ret));
@@ -365,11 +532,14 @@ static struct module tgen_module = {
 };
 
 RTE_INIT(tgen_control_init) {
+	atomic_store(&tgen_run.only_port, -1);
 	api_handler(GR_TGEN_STATUS, tgen_status);
 	api_handler(GR_TGEN_FLOW_ADD, tgen_flow_add);
 	api_handler(GR_TGEN_FLOW_DEL, tgen_flow_del);
 	api_handler(GR_TGEN_FLOW_CLEAR, tgen_flow_clear);
 	api_handler(GR_TGEN_FLOW_LIST, tgen_flow_list);
+	api_handler(GR_TGEN_START, tgen_start);
+	api_handler(GR_TGEN_STOP, tgen_stop);
 	worker_graph_builder_register(&tgen_builder);
 	module_register(&tgen_module);
 }

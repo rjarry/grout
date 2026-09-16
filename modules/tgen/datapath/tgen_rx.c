@@ -3,12 +3,12 @@
 
 #include "tgen.h"
 
-#include <graph.h>
-
 #include <rte_ethdev.h>
 #include <rte_graph_worker.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
+
+#include <graph.h>
 
 enum {
 	SINK = 0,

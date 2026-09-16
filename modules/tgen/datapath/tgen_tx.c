@@ -3,14 +3,13 @@
 
 #include "tgen.h"
 
-#include <graph.h>
-
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_graph_worker.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 
+#include <graph.h>
 #include <stdatomic.h>
 
 struct tgen_run tgen_run;
@@ -37,6 +36,10 @@ static uint16_t tgen_tx_process(
 	if (ctx == NULL || ctx->n_flows == 0)
 		return 0;
 	if (!atomic_load_explicit(&tgen_run.running, memory_order_relaxed))
+		return 0;
+
+	int only_port = atomic_load_explicit(&tgen_run.only_port, memory_order_relaxed);
+	if (only_port >= 0 && only_port != ctx->port_id)
 		return 0;
 
 	pps = atomic_load_explicit(&tgen_run.pps_per_clone, memory_order_relaxed);

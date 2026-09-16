@@ -32,6 +32,8 @@ struct tgen_run {
 	atomic_bool running;
 	// Packets per second each tgen_tx clone must emit (total rate / clone count).
 	_Atomic double pps_per_clone;
+	// If >= 0, only this port transmits; otherwise all generator ports do.
+	atomic_int only_port;
 };
 
 extern struct tgen_run tgen_run;
