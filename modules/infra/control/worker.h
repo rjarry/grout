@@ -132,3 +132,16 @@ int worker_destroy(unsigned cpu_id);
 int worker_graph_reload(struct worker *, vec struct iface_info_port **);
 int worker_graph_reload_all(vec struct iface_info_port **);
 void worker_graph_free(struct worker *);
+
+// A module (e.g. the traffic generator) may take over some workers and build a
+// completely separate graph for them instead of the forwarding graph. On every
+// reload, workers for which owns() returns true are handed to build() rather
+// than the default forwarding graph builder.
+typedef int (*worker_graph_build_cb)(struct worker *, uint8_t index, vec struct iface_info_port **);
+
+struct worker_graph_builder {
+	bool (*owns)(const struct worker *);
+	worker_graph_build_cb build;
+};
+
+void worker_graph_builder_register(const struct worker_graph_builder *);

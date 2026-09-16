@@ -56,6 +56,10 @@ struct gr_node_info {
 	gr_node_register_cb_t register_callback;
 	gr_node_register_cb_t unregister_callback;
 	gr_trace_format_cb_t trace_format;
+	// Node cloned per port-queue and driven by an alternative graph builder
+	// (e.g. the traffic generator). Such nodes are kept out of the shared
+	// base node set so they never land in the forwarding graphs.
+	bool clone_per_queue;
 	STAILQ_ENTRY(gr_node_info) next;
 };
 

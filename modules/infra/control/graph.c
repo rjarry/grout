@@ -31,6 +31,11 @@ static rte_node_t port_rx_node;
 static rte_node_t port_tx_node;
 static rte_node_t port_output_node;
 static rte_edge_t port_output_invalid;
+static const struct worker_graph_builder *alt_builder;
+
+void worker_graph_builder_register(const struct worker_graph_builder *builder) {
+	alt_builder = builder;
+}
 
 rte_edge_t gr_node_attach_parent(const char *parent, const char *node) {
 	rte_node_t parent_id;
@@ -103,6 +108,10 @@ worker_graph_new(struct worker *worker, uint8_t index, vec struct iface_info_por
 	uint16_t graph_uid;
 	unsigned n_rxqs;
 	int ret = 0;
+
+	// a module may own this worker and build its own separate graph
+	if (alt_builder != NULL && alt_builder->owns(worker))
+		return alt_builder->build(worker, index, ports);
 
 	n_rxqs = 0;
 	vec_foreach_ref (qmap, worker->rxqs) {
@@ -672,7 +681,7 @@ static void graph_init(struct event_base *) {
 			port_rx_node = reg->id;
 		else if (strcmp(reg->name, TX_NODE_BASE) == 0)
 			port_tx_node = reg->id;
-		else
+		else if (!info->clone_per_queue)
 			vec_add(base_node_names, reg->name);
 
 		if (strcmp(reg->name, "port_output") == 0)
