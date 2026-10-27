@@ -118,7 +118,8 @@ static uint16_t vxlan_output_process(
 			);
 			vh6->ip.dst_addr = d->vtep.ipv6;
 			vh6->ip.payload_len = vh6->udp.dgram_len;
-			vh6->udp.dgram_cksum = rte_ipv6_udptcp_cksum(&vh6->ip, &vh6->udp);
+			if (unlikely(vxlan->flags & GR_VXLAN_F_IPV6_CKSUM))
+				vh6->udp.dgram_cksum = rte_ipv6_udptcp_cksum(&vh6->ip, &vh6->udp);
 
 			edge = IP6_OUTPUT;
 			break;

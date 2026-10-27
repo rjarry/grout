@@ -118,6 +118,14 @@ static uint64_t parse_vxlan_args(
 		vxlan->flags &= ~GR_VXLAN_F_LEARN;
 		set_attrs |= GR_VXLAN_SET_FLAGS;
 	}
+	on_off = arg_str(p, "IPV6_CKSUM");
+	if (on_off != NULL && strcmp(on_off, "on") == 0) {
+		vxlan->flags |= GR_VXLAN_F_IPV6_CKSUM;
+		set_attrs |= GR_VXLAN_SET_FLAGS;
+	} else if (on_off != NULL && strcmp(on_off, "off") == 0) {
+		vxlan->flags &= ~GR_VXLAN_F_IPV6_CKSUM;
+		set_attrs |= GR_VXLAN_SET_FLAGS;
+	}
 
 	if (set_attrs == 0)
 		errno = EINVAL;
@@ -175,7 +183,9 @@ out:
 	return ret;
 }
 
-#define VXLAN_ATTRS_CMD "(encap_vrf ENCAP_VRF),(mac MAC),(dst_port DST_PORT),(learn LEARN)"
+#define VXLAN_ATTRS_CMD                                                                            \
+	"(encap_vrf ENCAP_VRF),(mac MAC),(dst_port DST_PORT),(learn LEARN)"                        \
+	",(ipv6_cksum IPV6_CKSUM)"
 
 #define VXLAN_ATTRS_ARGS                                                                           \
 	IFACE_ATTRS_ARGS,                                                                          \
@@ -196,6 +206,11 @@ out:
 		with_help(                                                                         \
 			"Enable/disable dynamic MAC learning when bridged (default on).",          \
 			EC_NODE_OR("LEARN", ec_node_str("", "on"), ec_node_str("", "off"))         \
+		),                                                                                 \
+		with_help(                                                                         \
+			"Force the computation of the UDP checksum with IPv6 underlay addresses "  \
+			"(default off).",                                                          \
+			EC_NODE_OR("IPV6_CKSUM", ec_node_str("", "on"), ec_node_str("", "off"))    \
 		)
 
 static int ctx_init(struct ec_node *root) {

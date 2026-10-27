@@ -74,7 +74,7 @@ ip -n evpn-peer addr add 3fff::1/64 dev x-p0
 ip -n evpn-peer link add br-l3 type bridge
 ip -n evpn-peer link set br-l3 up
 
-ip -n evpn-peer link add vxlan-l3 type vxlan id 1000 local 3fff::1 dstport 4789 nolearning
+ip -n evpn-peer link add vxlan-l3 type vxlan id 1000 local 3fff::1 dstport 4789 nolearning udp6zerocsumrx udp6zerocsumtx
 ip -n evpn-peer link set vxlan-l3 master br-l3
 ip -n evpn-peer link set vxlan-l3 up
 

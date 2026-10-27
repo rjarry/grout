@@ -80,7 +80,7 @@ ip -n evpn-peer addr add 172.16.0.1/24 dev x-p0
 ip -n evpn-peer link add br-l3 type bridge
 ip -n evpn-peer link set br-l3 up
 
-ip -n evpn-peer link add vni-l3 type vxlan id 1000 local 172.16.0.1 dstport 4789 nolearning
+ip -n evpn-peer link add vni-l3 type vxlan id 1000 local 172.16.0.1 dstport 4789 nolearning udp6zerocsumrx udp6zerocsumtx
 ip -n evpn-peer link set vni-l3 master br-l3
 ip -n evpn-peer link set vni-l3 up
 
@@ -88,7 +88,7 @@ ip -n evpn-peer link set vni-l3 up
 ip -n evpn-peer link add br100 type bridge
 ip -n evpn-peer link set br100 up
 
-ip -n evpn-peer link add vni100 type vxlan id 100 local 172.16.0.1 dstport 4789 nolearning
+ip -n evpn-peer link add vni100 type vxlan id 100 local 172.16.0.1 dstport 4789 nolearning udp6zerocsumrx udp6zerocsumtx
 ip -n evpn-peer link set vni100 master br100
 ip -n evpn-peer link set vni100 up
 

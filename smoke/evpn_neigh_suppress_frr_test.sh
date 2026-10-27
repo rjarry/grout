@@ -58,7 +58,7 @@ ip -n evpn-peer link set br100 up
 # linux needs an IP address in order to learn neighbors
 ip -n evpn-peer addr add 10.0.0.4/24 dev br100
 
-ip -n evpn-peer link add vxlan100 type vxlan id 100 local 172.16.0.1 dstport 4789 nolearning
+ip -n evpn-peer link add vxlan100 type vxlan id 100 local 172.16.0.1 dstport 4789 nolearning udp6zerocsumrx udp6zerocsumtx
 ip -n evpn-peer link set vxlan100 master br100
 ip -n evpn-peer link set vxlan100 type bridge_slave neigh_suppress on learning off
 ip -n evpn-peer link set vxlan100 up
